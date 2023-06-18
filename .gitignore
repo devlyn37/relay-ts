@@ -1,0 +1,6 @@
+# Ignore transpiled TypeScript
+dist/
+
+
+# Dependency directories
+node_modules/
