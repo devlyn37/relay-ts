@@ -5,24 +5,42 @@ import {
   WebSocketTransport,
   PublicClient,
   Block,
+  Address,
+  Hex,
+  PrivateKeyAccount,
 } from "viem";
 import { randomUUID } from "crypto";
+import { NonceManagedWallet } from "./NonceManagedWallet";
 
 export class TransactionManager {
   public chain: Chain;
   public transactions: Map<string, Hash> = new Map();
 
   private client: PublicClient;
+  private managedWallet: NonceManagedWallet;
 
-  constructor(chain: Chain, ws: WebSocketTransport) {
+  constructor(
+    chain: Chain,
+    ws: WebSocketTransport,
+    account: PrivateKeyAccount
+  ) {
     this.chain = chain;
     this.client = createPublicClient({ chain: this.chain, transport: ws });
+    this.managedWallet = new NonceManagedWallet(account, ws, chain);
 
     this.monitorBlocks();
   }
 
-  public send() {
-    return randomUUID();
+  public async send(to: Address, value: bigint, data?: Hex) {
+    const id = randomUUID();
+    const hash = await this.managedWallet.send(to, value, data);
+    this.transactions.set(id, hash);
+
+    return id;
+  }
+
+  private async processBlock(block: Block) {
+    console.log(block.transactions);
   }
 
   private monitorBlocks() {
@@ -38,9 +56,5 @@ export class TransactionManager {
         await this.processBlock(block);
       },
     });
-  }
-
-  private async processBlock(block: Block) {
-    console.log(block.transactions);
   }
 }
