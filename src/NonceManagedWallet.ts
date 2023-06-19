@@ -11,43 +11,8 @@ import {
   createPublicClient,
   PrivateKeyAccount,
   NonceTooLowError,
+  BaseError,
 } from "viem";
-
-class SequentialPromiseQueue {
-  private queue: {
-    callback: () => Promise<any>;
-    resolve: (value: any) => void;
-    reject: (e: any) => void;
-  }[] = [];
-  private isProcessingQueue: boolean = false; // Flag to check if queue processing is ongoing
-
-  public async push<T>(callback: () => Promise<T>): Promise<T> {
-    return new Promise((resolve, reject) => {
-      this.queue.push({ callback, resolve, reject });
-
-      if (!this.isProcessingQueue) {
-        this.processQueue();
-      }
-    });
-  }
-
-  private async processQueue() {
-    this.isProcessingQueue = true;
-
-    while (this.queue.length > 0) {
-      const { callback, resolve, reject } = this.queue.shift()!;
-
-      try {
-        const result = await callback();
-        resolve(result);
-      } catch (e: any) {
-        reject(e);
-      }
-    }
-
-    this.isProcessingQueue = false;
-  }
-}
 
 type RetryParams = {
   to: Address;
@@ -106,14 +71,12 @@ export class NonceManagedWallet {
       this.nonce = await this.client.getTransactionCount({
         address: this.address,
       });
-    } else {
-      this.nonce++; // Increment the nonce for each transaction
     }
 
     let nonceRetryCount = 0;
     while (nonceRetryCount < 2) {
       try {
-        return await this.wallet.sendTransaction({
+        const hash = await this.wallet.sendTransaction({
           chain: this.chain,
           account: this.account,
           to,
@@ -121,15 +84,17 @@ export class NonceManagedWallet {
           data,
           nonce: this.nonce, // Add nonce to transaction
         });
-      } catch (e) {
-        if (e instanceof NonceTooLowError) {
+
+        this.nonce++;
+        return hash;
+      } catch (e: any) {
+        if (e.details === "nonce too low") {
           this.nonce = await this.client.getTransactionCount({
             address: this.address,
           });
 
           nonceRetryCount++;
         } else {
-          this.nonce--;
           throw e;
         }
       }
@@ -160,12 +125,48 @@ export class NonceManagedWallet {
         maxFeePerGas,
         data,
       });
-    } catch (e) {
-      if (e instanceof NonceTooLowError) {
+    } catch (e: any) {
+      if (e.details === "nonce too low") {
         return previousHash;
       }
 
       throw e;
     }
+  }
+}
+
+class SequentialPromiseQueue {
+  private queue: {
+    callback: () => Promise<any>;
+    resolve: (value: any) => void;
+    reject: (e: any) => void;
+  }[] = [];
+  private isProcessingQueue: boolean = false; // Flag to check if queue processing is ongoing
+
+  public async push<T>(callback: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ callback, resolve, reject });
+
+      if (!this.isProcessingQueue) {
+        this.processQueue();
+      }
+    });
+  }
+
+  private async processQueue() {
+    this.isProcessingQueue = true;
+
+    while (this.queue.length > 0) {
+      const { callback, resolve, reject } = this.queue.shift()!;
+
+      try {
+        const result = await callback();
+        resolve(result);
+      } catch (e: any) {
+        reject(e);
+      }
+    }
+
+    this.isProcessingQueue = false;
   }
 }

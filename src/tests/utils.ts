@@ -14,28 +14,36 @@ import { Chain, foundry } from "viem/chains";
  */
 const pool = Number(process.env.VITEST_POOL_ID ?? 1);
 export const port = parseInt(`500${pool}`);
-export const anvil = createAnvil({ port });
+export const anvil = createAnvil({ port, noMining: true });
 
-console.log("Here's the pool!");
-console.log(process.env.VITEST_POOL_ID);
-
-console.log("Here's the port");
-console.log(port);
-
-export const ws = webSocket(`ws://127.0.0.1:${port}`);
+export const testChain = {
+  ...foundry, // We are using a mainnet fork for testing.
+  rpcUrls: {
+    // These rpc urls are automatically used in the transports.
+    default: {
+      http: [`http://127.0.0.1:${port}`],
+      webSocket: [`ws://127.0.0.1:${port}`],
+    },
+    public: {
+      http: [`http://127.0.0.1:${port}`],
+      webSocket: [`ws://127.0.0.1:${port}`],
+    },
+  },
+  name: `testchain ${pool}`,
+} as const satisfies Chain;
 
 export const testClient = createTestClient({
-  chain: foundry,
+  chain: testChain,
   mode: "anvil",
-  transport: ws,
+  transport: webSocket(),
 });
 
 export const publicClient = createPublicClient({
-  chain: foundry,
-  transport: ws,
+  chain: testChain,
+  transport: webSocket(),
 });
 
 export const walletClient = createWalletClient({
-  chain: foundry,
-  transport: ws,
+  chain: testChain,
+  transport: webSocket(),
 });

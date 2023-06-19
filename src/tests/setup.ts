@@ -4,10 +4,15 @@ import { afterEach, beforeAll, beforeEach } from "vitest";
 beforeEach(async () => {
   console.log(`Starting Anvil on port ${port}`);
   await anvil.start();
-  await testClient.setAutomine(false);
 });
 
 afterEach(async (context) => {
-  console.log(`Starting Anvil on port ${port}`);
+  console.log(`Stopping Anvil on port ${port}`);
   await anvil.stop();
+
+  context.onTestFailed(async () => {
+    // If a test fails, you can fetch and print the logs of your anvil instance.
+    // Only print the 20 most recent log messages.
+    // console.log(...anvil.logs.slice(-20));
+  });
 });
