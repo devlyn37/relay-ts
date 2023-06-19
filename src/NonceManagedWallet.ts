@@ -137,16 +137,6 @@ export class NonceManagedWallet {
     data,
   }: ReplacementParams) {
     try {
-      console.log("replacing transaction");
-      console.log({
-        chain: this.chain,
-        account: this.account,
-        to,
-        value,
-        nonce,
-        data,
-        ...fees,
-      });
       return await this.wallet.sendTransaction({
         chain: this.chain,
         account: this.account,
@@ -158,7 +148,6 @@ export class NonceManagedWallet {
       });
     } catch (e: any) {
       if (e.details === "nonce too low") {
-        console.log("Returning previous hash");
         return previousHash;
       }
 

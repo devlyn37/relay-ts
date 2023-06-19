@@ -112,10 +112,9 @@ export class TransactionManager {
       console.log(`blocksPending for tx ${txn.hash} ${txn.blocksPending}`);
 
       if (txn.blocksPending >= this.blockRetry) {
-        // do less stuff here
+        // TODO clean this up and do less stuff here
         const test = async () => {
           try {
-            console.log(`replacing transaction`);
             const currentFees = await this.gasOracle.getCurrent();
             const retryFees = this.gasOracle.getRetry(txn.fees, currentFees);
 

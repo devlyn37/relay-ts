@@ -7,7 +7,7 @@ import {
   testChain,
   testClient,
 } from "./utils.js";
-import { Address, parseEther, webSocket } from "viem";
+import { parseEther, parseGwei, webSocket } from "viem";
 import { test, describe, expect } from "vitest";
 import { TransactionManager } from "../TransactionManager.js";
 import { BaseGasOracle } from "../gasOracle.js";
@@ -128,8 +128,67 @@ describe("TransactionManager", () => {
 
       // Check that the transaction is still pending
       expect(transactionManager.pending.has(transactionId)).toBe(true);
-      console.log("Transactions before retry");
-      console.log(transactionManager.pending);
+    },
+    { timeout: 30000 }
+  );
+
+  test(
+    "Will handle large spikes in gas",
+    async () => {
+      const managedWallet = new NonceManagedWallet(
+        privateKeyToAccount(generatePrivateKey()),
+        webSocket(),
+        testChain
+      );
+      const transactionManager = new TransactionManager(
+        testChain,
+        publicClient,
+        managedWallet,
+        new BaseGasOracle(publicClient),
+        1
+      );
+
+      await testClient.setBalance({
+        address: managedWallet.address,
+        value: parseEther("1"),
+      });
+
+      // send a transaction to monitor
+      const transactionId = await transactionManager.send(
+        ALICE,
+        parseEther("0.1")
+      );
+      const initialHash = transactionManager.pending.get(transactionId)!.hash;
+
+      // mine a block, the previous transaction won't get mined because it's gas values are too low
+      await testClient.setNextBlockBaseFeePerGas({
+        baseFeePerGas: parseGwei("1000"),
+      });
+      await testClient.mine({ blocks: 1 });
+      await sleep(500);
+
+      const pendingAfterRetry = await getPendingTxnsForAddress(
+        managedWallet.address
+      );
+      expect(pendingAfterRetry.length).to.eq(1);
+      expect(pendingAfterRetry[0].hash).to.not.eq(initialHash);
+      expect(transactionManager.pending.has(transactionId)).to.eq(true);
+      expect(transactionManager.pending.get(transactionId)?.hash).to.eq(
+        pendingAfterRetry[0].hash
+      );
+
+      // Finally, mine the next block w/ the same crazy high base fee
+      await testClient.setNextBlockBaseFeePerGas({
+        baseFeePerGas: parseGwei("1000"),
+      });
+      await testClient.mine({ blocks: 1 });
+      await sleep(500);
+
+      expect(transactionManager.pending.has(transactionId)).toBe(false);
+      const pendingFinal = await getPendingTxnsForAddress(
+        managedWallet.address
+      );
+      expect(pendingFinal.length).to.eq(0);
     },
     { timeout: 30000 }
   );
