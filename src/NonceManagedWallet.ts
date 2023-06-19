@@ -109,7 +109,6 @@ export class NonceManagedWallet {
         this.managedNonce++;
         return { hash, nonce };
       } catch (e: any) {
-        console.log(e.details);
         if (e.details === "nonce too low" || e.details === "nonce too high") {
           this.managedNonce = await this.client.getTransactionCount({
             address: this.address,

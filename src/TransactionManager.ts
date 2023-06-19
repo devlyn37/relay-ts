@@ -7,7 +7,7 @@ type TransactionData = {
   to: Address;
   value: bigint;
   nonce: number;
-  blocksPending: number;
+  blocksSpentWaiting: number;
   fees: GasFees;
   hash: Hash;
   data?: Hex;
@@ -53,7 +53,7 @@ export class TransactionManager {
       to,
       value,
       data,
-      blocksPending: 0,
+      blocksSpentWaiting: 0,
       nonce,
       fees,
       hash,
@@ -65,12 +65,10 @@ export class TransactionManager {
   private monitorBlocks() {
     this.client.watchBlockNumber({
       onBlockNumber: async (blockNumber) => {
-        const receivedTimestamp = new Date();
-        console.log("Block number received at:", receivedTimestamp);
+        console.log("Block number received at:", new Date());
 
         const block = await this.client.getBlock({ blockNumber });
-        const fetchedTimestamp = new Date();
-        console.log("Full block fetched at:", fetchedTimestamp);
+        console.log("Full block fetched at:", new Date());
 
         try {
           await this.processBlock(block);
@@ -88,8 +86,6 @@ export class TransactionManager {
   }
 
   private async processBlock(block: Block) {
-    console.log(block.transactions);
-
     for (const txn of block.transactions) {
       const hash = typeof txn === "string" ? txn : txn.hash;
       const uuid = this.hashToUUID.get(hash);
@@ -101,41 +97,41 @@ export class TransactionManager {
       }
     }
 
-    this.bumpPendingTransactions();
-  }
+    const pending = [...this.pending.entries()];
+    const retries = [];
 
-  private bumpPendingTransactions() {
-    const txns = [...this.pending.entries()];
+    for (const [uuid, txn] of pending) {
+      txn.blocksSpentWaiting++;
+      let oracleEstimate: GasFees | undefined = undefined;
 
-    for (const [uuid, txn] of txns) {
-      txn.blocksPending++;
-      console.log(`blocksPending for tx ${txn.hash} ${txn.blocksPending}`);
-
-      if (txn.blocksPending >= this.blockRetry) {
-        // TODO clean this up and do less stuff here
-        const test = async () => {
-          try {
-            const currentFees = await this.gasOracle.getCurrent();
-            const retryFees = this.gasOracle.getRetry(txn.fees, currentFees);
-
-            this.hashToUUID.delete(txn.hash);
-            const hash = await this.managedWallet.replace({
-              ...txn,
-              fees: retryFees,
-              previousHash: txn.hash,
-            });
-
-            this.hashToUUID.set(hash, uuid);
-            txn.hash = hash;
-            txn.blocksPending = 0;
-            txn.fees = retryFees;
-          } catch (e) {
-            console.error(e);
-          }
-        };
-
-        test();
+      if (txn.blocksSpentWaiting >= this.blockRetry) {
+        oracleEstimate = oracleEstimate ?? (await this.gasOracle.getCurrent()); // Let's only fetch this once
+        retries.push(this.retryTransaction(uuid, txn, oracleEstimate));
       }
     }
+
+    console.log(
+      "Block fully processed, completed transactions marked, retries sent: ",
+      new Date()
+    );
+    return Promise.all(retries);
+  }
+
+  private async retryTransaction(
+    uuid: UUID,
+    txn: TransactionData,
+    oracleEstimate: GasFees
+  ) {
+    const hash = await this.managedWallet.replace({
+      ...txn,
+      fees: this.gasOracle.getRetry(txn.fees, oracleEstimate),
+      previousHash: txn.hash,
+    });
+
+    this.hashToUUID.delete(txn.hash);
+    this.hashToUUID.set(hash, uuid);
+    txn.hash = hash;
+    txn.blocksSpentWaiting = 0;
+    txn.fees = oracleEstimate;
   }
 }

@@ -77,9 +77,9 @@ describe("TransactionManager", () => {
       const hashAfterRetry = pendingAfterRetry[0].hash;
 
       expect(hashAfterRetry).to.not.eq(hashBeforeRetry);
-      expect(transactionManager.pending.get(transactionId)?.blocksPending).toBe(
-        0
-      );
+      expect(
+        transactionManager.pending.get(transactionId)?.blocksSpentWaiting
+      ).toBe(0);
 
       // Finally, the retried transaction should have been mined
       await testClient.mine({ blocks: 1 });
