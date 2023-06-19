@@ -23,13 +23,16 @@ export class BaseGasOracle implements GasOracle {
     ]);
 
     if (block.baseFeePerGas == null) {
-      return { gasPrice };
+      return { gasPrice: this.slack(gasPrice) };
     }
 
     const maxFeePerGas = gasPrice;
     const maxPriorityFeePerGas = maxFeePerGas - block.baseFeePerGas;
 
-    return { maxFeePerGas, maxPriorityFeePerGas };
+    return {
+      maxFeePerGas: this.slack(maxFeePerGas),
+      maxPriorityFeePerGas: this.slack(maxPriorityFeePerGas),
+    };
   }
 
   public getRetry(prev: GasFees, current: GasFees): GasFees {
@@ -54,6 +57,10 @@ export class BaseGasOracle implements GasOracle {
     } else {
       throw new Error("Mismatched gas fee formats in prev and currentEstimate");
     }
+  }
+
+  private slack(n: bigint) {
+    return (n * 6n) / 5n;
   }
 
   private max(a: bigint, b: bigint) {
