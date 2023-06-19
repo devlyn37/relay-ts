@@ -26,22 +26,32 @@ export class NonceManagedWallet {
   public address: Address;
   public chain: Chain;
 
+  private managedNonce: number | undefined;
   private wallet: WalletClient;
   private client: PublicClient;
   private account: Account;
-  private nonce: number | undefined = 0;
   private queue = new SequentialPromiseQueue();
 
-  constructor(account: PrivateKeyAccount, transport: Transport, chain: Chain) {
+  constructor(
+    account: PrivateKeyAccount,
+    transport: Transport,
+    chain: Chain,
+    initialNonce?: number
+  ) {
     this.chain = chain;
     this.account = account;
     this.address = account.address;
+    this.managedNonce = initialNonce;
     this.client = createPublicClient({ chain, transport });
     this.wallet = createWalletClient({
       account,
       transport,
       chain,
     });
+  }
+
+  public get nonce() {
+    return this.managedNonce;
   }
 
   public async send(to: Address, value: bigint, data?: Hex) {
@@ -65,8 +75,8 @@ export class NonceManagedWallet {
     value: bigint,
     data?: Hex
   ): Promise<Hash> {
-    if (this.nonce === undefined) {
-      this.nonce = await this.client.getTransactionCount({
+    if (this.managedNonce === undefined) {
+      this.managedNonce = await this.client.getTransactionCount({
         address: this.address,
       });
     }
@@ -80,14 +90,15 @@ export class NonceManagedWallet {
           to,
           value,
           data,
-          nonce: this.nonce, // Add nonce to transaction
+          nonce: this.managedNonce, // Add nonce to transaction
         });
 
-        this.nonce++;
+        this.managedNonce++;
         return hash;
       } catch (e: any) {
-        if (e.details === "nonce too low") {
-          this.nonce = await this.client.getTransactionCount({
+        console.log(e.details);
+        if (e.details === "nonce too low" || e.details === "nonce too high") {
+          this.managedNonce = await this.client.getTransactionCount({
             address: this.address,
           });
 
