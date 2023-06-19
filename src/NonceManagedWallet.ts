@@ -10,8 +10,6 @@ import {
   PublicClient,
   createPublicClient,
   PrivateKeyAccount,
-  NonceTooLowError,
-  BaseError,
 } from "viem";
 
 type RetryParams = {
@@ -100,8 +98,9 @@ export class NonceManagedWallet {
       }
     }
 
-    // This should never happen
-    throw new Error("Tried resetting nonce too many times");
+    throw new Error(
+      "Tried resetting nonce too many times, someone is using the account externally"
+    );
   }
 
   // TODO object params

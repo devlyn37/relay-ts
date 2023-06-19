@@ -7,7 +7,7 @@ import { createWalletClient, parseEther, webSocket } from "viem";
 import { test, describe, expect } from "vitest";
 
 describe("Nonce Managed Wallet", () => {
-  test("Can send Transaction", async () => {
+  test("Can send many transactions and recover when nonce is made out of sync", async () => {
     const nonceManagedWallet = new NonceManagedWallet(
       privateKeyToAccount(generatePrivateKey()),
       webSocket(),
