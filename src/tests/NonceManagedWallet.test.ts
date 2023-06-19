@@ -1,7 +1,12 @@
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { NonceManagedWallet } from "../NonceManagedWallet.js";
 import { ALICE } from "./constants.js";
-import { publicClient, testChain, testClient } from "./utils.js";
+import {
+  publicClient,
+  testChain,
+  testClient,
+  getPendingTxnsForAddress,
+} from "./utils.js";
 import { parseEther, webSocket } from "viem";
 import { test, describe, expect } from "vitest";
 
@@ -98,13 +103,10 @@ describe("Nonce Managed Wallet", () => {
     expect(retryHash).to.not.eq(hash);
 
     // first transaction was replaced in the mempool
-    const content = await testClient.getTxpoolContent();
-    const pending =
-      content.pending[
-        nonceManagedWallet.address.toLowerCase() as `0x${string}`
-      ];
 
-    expect(pending["0"].hash).to.equal(retryHash);
+    const pending = await getPendingTxnsForAddress(nonceManagedWallet.address);
+    expect(pending.length).to.eq(1);
+    expect(pending[0].hash).to.equal(retryHash);
 
     // test that replacement transaction goes through
     await testClient.mine({ blocks: 1 });

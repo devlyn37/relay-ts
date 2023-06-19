@@ -67,7 +67,7 @@ describe("TransactionManager", () => {
 
       // Mine another block, triggering a retry
       await testClient.mine({ blocks: 1 });
-      await sleep(1000);
+      await sleep(500);
 
       // Check that a new transaction has replaced the former, with a different hash
       const pendingAfterRetry = await getPendingTxnsForAddress(
@@ -83,7 +83,7 @@ describe("TransactionManager", () => {
 
       // Finally, the retried transaction should have been mined
       await testClient.mine({ blocks: 1 });
-      await sleep(1000);
+      await sleep(500);
       expect(transactionManager.pending.has(transactionId)).toBe(false);
       const pendingFinal = await getPendingTxnsForAddress(
         managedWallet.address
@@ -93,42 +93,44 @@ describe("TransactionManager", () => {
     { timeout: 30000 }
   );
 
-  // test("Does not retry a transaction if it is mined within blockRetry blocks", async () => {
-  //   const transactionManager = new TransactionManager(
-  //     testChain,
-  //     testClient,
-  //     new NonceManagedWallet(
-  //       privateKeyToAccount(generatePrivateKey()),
-  //       webSocket(),
-  //       testChain
-  //     ),
-  //     new GasOracle(testClient),
-  //     5
-  //   );
+  test(
+    "Does not retry a transaction if it is mined within blockRetry blocks",
+    async () => {
+      const managedWallet = new NonceManagedWallet(
+        privateKeyToAccount(generatePrivateKey()),
+        webSocket(),
+        testChain
+      );
+      const transactionManager = new TransactionManager(
+        testChain,
+        publicClient,
+        managedWallet,
+        new BaseGasOracle(publicClient),
+        5
+      );
 
-  //   await testClient.setBalance({
-  //     address: transactionManager.managedWallet.address,
-  //     value: parseEther("1"),
-  //   });
+      await testClient.setBalance({
+        address: managedWallet.address,
+        value: parseEther("1"),
+      });
 
-  //   const transactionId = await transactionManager.send(
-  //     ALICE,
-  //     parseEther("0.1")
-  //   );
-  //   const hash = transactionManager.pending.get(transactionId)?.hash;
+      // send a transaction to monitor
+      const transactionId = await transactionManager.send(
+        ALICE,
+        parseEther("0.1")
+      );
 
-  //   // Mine 4 blocks without including the transaction
-  //   for (let i = 0; i < 4; i++) {
-  //     await testClient.mine({ blocks: 1 });
-  //   }
+      // Drop the transaction, and mine a few blocks but not enough to trigger a retry
+      const hash = transactionManager.pending.get(transactionId)!.hash;
+      await testClient.dropTransaction({ hash });
+      await testClient.mine({ blocks: 3 });
+      await sleep(1000);
 
-  //   // Mine a block including the transaction
-  //   await testClient.mine({
-  //     blocks: 1,
-  //     transactions: [hash],
-  //   });
-
-  //   // Check that the transaction is no longer pending
-  //   expect(transactionManager.pending.has(transactionId)).toBe(false);
-  // });
+      // Check that the transaction is still pending
+      expect(transactionManager.pending.has(transactionId)).toBe(true);
+      console.log("Transactions before retry");
+      console.log(transactionManager.pending);
+    },
+    { timeout: 30000 }
+  );
 });

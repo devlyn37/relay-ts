@@ -13,7 +13,7 @@ import { Chain, foundry } from "viem/chains";
  *
  * This is used by the anvil proxy to route requests to the correct anvil instance.
  */
-const pool = Number(process.env.VITEST_POOL_ID ?? 1);
+const pool = Number(process.env.VITEST_POOL_ID ?? 1) + 1;
 export const port = parseInt(`500${pool}`);
 export const anvil = createAnvil({ port, noMining: true });
 
