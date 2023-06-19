@@ -1,9 +1,8 @@
-import { foundry } from "viem/chains";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { NonceManagedWallet } from "../NonceManagedWallet.js";
-import { ALICE, BOB } from "./constants.js";
+import { ALICE } from "./constants.js";
 import { publicClient, testChain, testClient } from "./utils.js";
-import { createWalletClient, parseEther, webSocket } from "viem";
+import { parseEther, webSocket } from "viem";
 import { test, describe, expect } from "vitest";
 
 describe("Nonce Managed Wallet", () => {
@@ -75,7 +74,7 @@ describe("Nonce Managed Wallet", () => {
       nonce: 50,
     });
 
-    const hash = await nonceManagedWallet.send(ALICE, parseEther("0.1"));
+    const { hash } = await nonceManagedWallet.send(ALICE, parseEther("0.1"));
     await testClient.mine({ blocks: 1 });
 
     const tx = await publicClient.getTransaction({
@@ -97,14 +96,16 @@ describe("Nonce Managed Wallet", () => {
       value: parseEther("1"),
     });
 
-    const hash = await nonceManagedWallet.send(ALICE, parseEther("0.1"));
+    const { hash } = await nonceManagedWallet.send(ALICE, parseEther("0.1"));
     const txn = await publicClient.getTransaction({ hash });
     const retryHash = await nonceManagedWallet.retry({
       to: txn.to!,
       value: txn.value,
       nonce: txn.nonce,
-      maxFeePerGas: txn.maxFeePerGas! * 2n,
-      maxPriorityFeePerGas: txn.maxPriorityFeePerGas! * 2n,
+      fees: {
+        maxFeePerGas: txn.maxFeePerGas! * 2n,
+        maxPriorityFeePerGas: txn.maxPriorityFeePerGas! * 2n,
+      },
       previousHash: hash,
     });
 
@@ -140,7 +141,7 @@ describe("Nonce Managed Wallet", () => {
       value: parseEther("1"),
     });
 
-    const hash = await nonceManagedWallet.send(ALICE, parseEther("0.1"));
+    const { hash } = await nonceManagedWallet.send(ALICE, parseEther("0.1"));
     const txn = await publicClient.getTransaction({ hash });
     await testClient.mine({ blocks: 1 });
 
@@ -148,8 +149,10 @@ describe("Nonce Managed Wallet", () => {
       to: txn.to!,
       value: txn.value,
       nonce: txn.nonce,
-      maxFeePerGas: txn.maxFeePerGas! * 2n,
-      maxPriorityFeePerGas: txn.maxPriorityFeePerGas! * 2n,
+      fees: {
+        maxFeePerGas: txn.maxFeePerGas! * 2n,
+        maxPriorityFeePerGas: txn.maxPriorityFeePerGas! * 2n,
+      },
       previousHash: hash,
     });
 

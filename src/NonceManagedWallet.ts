@@ -11,16 +11,25 @@ import {
   createPublicClient,
   PrivateKeyAccount,
 } from "viem";
+import { GasFees } from "./gasOracle";
 
 type RetryParams = {
   to: Address;
   value: bigint;
   nonce: number;
-  maxPriorityFeePerGas: bigint;
-  maxFeePerGas: bigint;
+  fees: GasFees;
   previousHash: Hash;
   data?: Hex;
 };
+
+export class NonceRetryLimitError extends Error {
+  firstNonce: number;
+
+  constructor(nonce: number, msg: string) {
+    super(msg);
+    this.firstNonce = nonce;
+  }
+}
 
 export class NonceManagedWallet {
   public address: Address;
@@ -54,9 +63,9 @@ export class NonceManagedWallet {
     return this.managedNonce;
   }
 
-  public async send(to: Address, value: bigint, data?: Hex) {
+  public async send(to: Address, value: bigint, fees?: GasFees, data?: Hex) {
     const callback = () => {
-      return this.sendTransaction(to, value, data);
+      return this.sendTransaction(to, value, fees, data);
     };
 
     return this.queue.push(callback);
@@ -73,28 +82,32 @@ export class NonceManagedWallet {
   private async sendTransaction(
     to: Address,
     value: bigint,
+    fees?: GasFees,
     data?: Hex
-  ): Promise<Hash> {
+  ): Promise<{ hash: Hash; nonce: number }> {
     if (this.managedNonce === undefined) {
       this.managedNonce = await this.client.getTransactionCount({
         address: this.address,
       });
     }
+    const originalNonce = this.managedNonce;
 
     let nonceRetryCount = 0;
     while (nonceRetryCount < 2) {
       try {
+        const nonce = this.managedNonce;
         const hash = await this.wallet.sendTransaction({
           chain: this.chain,
           account: this.account,
           to,
           value,
           data,
-          nonce: this.managedNonce, // Add nonce to transaction
+          nonce,
+          ...fees,
         });
 
         this.managedNonce++;
-        return hash;
+        return { hash, nonce };
       } catch (e: any) {
         console.log(e.details);
         if (e.details === "nonce too low" || e.details === "nonce too high") {
@@ -109,7 +122,8 @@ export class NonceManagedWallet {
       }
     }
 
-    throw new Error(
+    throw new NonceRetryLimitError(
+      originalNonce,
       "Tried resetting nonce too many times, someone is using the account externally"
     );
   }
@@ -119,8 +133,7 @@ export class NonceManagedWallet {
     to,
     value,
     nonce,
-    maxFeePerGas,
-    maxPriorityFeePerGas,
+    fees,
     previousHash,
     data,
   }: RetryParams) {
@@ -131,9 +144,8 @@ export class NonceManagedWallet {
         to,
         value,
         nonce,
-        maxPriorityFeePerGas,
-        maxFeePerGas,
         data,
+        ...fees,
       });
     } catch (e: any) {
       if (e.details === "nonce too low") {
