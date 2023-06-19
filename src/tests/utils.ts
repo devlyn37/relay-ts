@@ -1,5 +1,6 @@
 import { createAnvil } from "@viem/anvil";
 import {
+  Address,
   createPublicClient,
   createTestClient,
   createWalletClient,
@@ -47,3 +48,13 @@ export const walletClient = createWalletClient({
   chain: testChain,
   transport: webSocket(),
 });
+
+export async function getPendingTxnsForAddress(address: Address) {
+  const content = await testClient.getTxpoolContent();
+  const pending = content.pending[address.toLowerCase() as `0x${string}`];
+  if (pending === undefined) {
+    return [];
+  }
+
+  return Object.values(pending);
+}

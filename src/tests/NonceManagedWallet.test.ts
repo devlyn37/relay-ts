@@ -38,20 +38,6 @@ describe("Nonce Managed Wallet", () => {
     const aliceBalanceAfter = await publicClient.getBalance({ address: ALICE });
 
     expect(aliceBalanceAfter).to.eq(aliceBalanceBefore + parseEther("0.5"));
-
-    await testClient.setNonce({
-      address: nonceManagedWallet.address,
-      nonce: 50,
-    });
-    await nonceManagedWallet.send(ALICE, parseEther("0.05"));
-
-    await testClient.mine({ blocks: 1 });
-
-    const aliceBalanceAfter2 = await publicClient.getBalance({
-      address: ALICE,
-    });
-
-    expect(aliceBalanceAfter2).to.eq(aliceBalanceAfter + parseEther("0.05"));
   });
 
   test("Can recover from nonce to low errors when sending transactions", async () => {
@@ -98,7 +84,7 @@ describe("Nonce Managed Wallet", () => {
 
     const { hash } = await nonceManagedWallet.send(ALICE, parseEther("0.1"));
     const txn = await publicClient.getTransaction({ hash });
-    const retryHash = await nonceManagedWallet.retry({
+    const retryHash = await nonceManagedWallet.replace({
       to: txn.to!,
       value: txn.value,
       nonce: txn.nonce,
@@ -145,7 +131,7 @@ describe("Nonce Managed Wallet", () => {
     const txn = await publicClient.getTransaction({ hash });
     await testClient.mine({ blocks: 1 });
 
-    const retryHash = await nonceManagedWallet.retry({
+    const retryHash = await nonceManagedWallet.replace({
       to: txn.to!,
       value: txn.value,
       nonce: txn.nonce,

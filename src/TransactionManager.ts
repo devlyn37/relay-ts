@@ -72,7 +72,17 @@ export class TransactionManager {
         const fetchedTimestamp = new Date();
         console.log("Full block fetched at:", fetchedTimestamp);
 
-        await this.processBlock(block);
+        try {
+          await this.processBlock(block);
+        } catch (e) {
+          console.error(
+            `There was an error processing the block:\n${JSON.stringify(
+              e,
+              undefined,
+              2
+            )}`
+          );
+        }
       },
     });
   }
@@ -91,17 +101,41 @@ export class TransactionManager {
       }
     }
 
-    await this.bumpPendingTransactions();
+    this.bumpPendingTransactions();
   }
 
   private bumpPendingTransactions() {
-    const txns = [...this.pending.values()];
+    const txns = [...this.pending.entries()];
 
-    for (const txn of txns) {
+    for (const [uuid, txn] of txns) {
       txn.blocksPending++;
+      console.log(`blocksPending for tx ${txn.hash} ${txn.blocksPending}`);
 
-      if (txn.blocksPending > this.blockRetry) {
-        this.managedWallet.retry({ ...txn, previousHash: txn.hash }); // TODO have some hook for if these fails
+      if (txn.blocksPending >= this.blockRetry) {
+        // do less stuff here
+        const test = async () => {
+          try {
+            console.log(`replacing transaction`);
+            const currentFees = await this.gasOracle.getCurrent();
+            const retryFees = this.gasOracle.getRetry(txn.fees, currentFees);
+
+            this.hashToUUID.delete(txn.hash);
+            const hash = await this.managedWallet.replace({
+              ...txn,
+              fees: retryFees,
+              previousHash: txn.hash,
+            });
+
+            this.hashToUUID.set(hash, uuid);
+            txn.hash = hash;
+            txn.blocksPending = 0;
+            txn.fees = retryFees;
+          } catch (e) {
+            console.error(e);
+          }
+        };
+
+        test();
       }
     }
   }

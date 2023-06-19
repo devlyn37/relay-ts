@@ -13,7 +13,7 @@ import {
 } from "viem";
 import { GasFees } from "./gasOracle";
 
-type RetryParams = {
+type ReplacementParams = {
   to: Address;
   value: bigint;
   nonce: number;
@@ -71,9 +71,9 @@ export class NonceManagedWallet {
     return this.queue.push(callback);
   }
 
-  public async retry(params: RetryParams) {
+  public async replace(params: ReplacementParams) {
     const callback = () => {
-      return this.retryTransaction(params);
+      return this.replaceTransaction(params);
     };
 
     return this.queue.push(callback);
@@ -128,16 +128,25 @@ export class NonceManagedWallet {
     );
   }
 
-  // TODO object params
-  private async retryTransaction({
+  private async replaceTransaction({
     to,
     value,
     nonce,
     fees,
     previousHash,
     data,
-  }: RetryParams) {
+  }: ReplacementParams) {
     try {
+      console.log("replacing transaction");
+      console.log({
+        chain: this.chain,
+        account: this.account,
+        to,
+        value,
+        nonce,
+        data,
+        ...fees,
+      });
       return await this.wallet.sendTransaction({
         chain: this.chain,
         account: this.account,
@@ -149,6 +158,7 @@ export class NonceManagedWallet {
       });
     } catch (e: any) {
       if (e.details === "nonce too low") {
+        console.log("Returning previous hash");
         return previousHash;
       }
 
