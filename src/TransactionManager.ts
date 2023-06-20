@@ -2,6 +2,7 @@ import { Chain, Hash, PublicClient, Block, Address, Hex } from "viem";
 import { UUID, randomUUID } from "crypto";
 import { NonceManagedWallet } from "./NonceManagedWallet";
 import { GasFees, GasOracle } from "./gasOracle";
+import EventEmitter from "events";
 
 type TransactionData = {
   to: Address;
@@ -13,7 +14,7 @@ type TransactionData = {
   data?: Hex;
 };
 
-export class TransactionManager {
+export class TransactionManager extends EventEmitter {
   public chain: Chain;
   public pending: Map<UUID, TransactionData> = new Map();
   public hashToUUID: Map<Hash, UUID> = new Map();
@@ -30,6 +31,7 @@ export class TransactionManager {
     gasOracle: GasOracle,
     blockRetry: number
   ) {
+    super({ captureRejections: true });
     this.chain = chain;
     this.client = client;
     this.managedWallet = managedWallet;
@@ -94,6 +96,7 @@ export class TransactionManager {
         console.log(`transaction ${hash} has been mined`);
         this.hashToUUID.delete(hash);
         this.pending.delete(uuid);
+        this.emit(`transactionMined-${uuid}`);
       }
     }
 
@@ -122,16 +125,22 @@ export class TransactionManager {
     txn: TransactionData,
     oracleEstimate: GasFees
   ) {
-    const hash = await this.managedWallet.replace({
-      ...txn,
-      fees: this.gasOracle.getRetry(txn.fees, oracleEstimate),
-      previousHash: txn.hash,
-    });
+    try {
+      const retryFees = this.gasOracle.getRetry(txn.fees, oracleEstimate);
+      const hash = await this.managedWallet.replace({
+        ...txn,
+        fees: retryFees,
+        previousHash: txn.hash,
+      });
 
-    this.hashToUUID.delete(txn.hash);
-    this.hashToUUID.set(hash, uuid);
-    txn.hash = hash;
-    txn.blocksSpentWaiting = 0;
-    txn.fees = oracleEstimate;
+      this.hashToUUID.delete(txn.hash);
+      this.hashToUUID.set(hash, uuid);
+      txn.hash = hash;
+      txn.blocksSpentWaiting = 0;
+      txn.fees = retryFees;
+      this.emit(`transactionRetried-${uuid}`, { hash, fees: txn.fees });
+    } catch (e) {
+      this.emit(`transactionRetryFailed-${uuid}`, e);
+    }
   }
 }
