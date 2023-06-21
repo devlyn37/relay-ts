@@ -1,9 +1,11 @@
 import { Address, Hash, Hex } from "viem";
 import { GasFees } from "./gasOracle";
+import { UUID } from "crypto";
 
-type Status = "pending" | "complete" | "failed";
+export type Status = "pending" | "complete" | "failed";
 
-type Request = {
+export type Request = {
+  id: UUID;
   status: Status;
   to: Address;
   from: Address;
@@ -16,6 +18,7 @@ type Request = {
 };
 
 export interface RequestRepository {
-  create(): Promise<Request>;
-  update(request: Request): Promise<Request>;
+  create(request: Request): Promise<void>;
+  update(id: UUID, status: Status, hash: Hash, fees: GasFees): Promise<void>;
+  get(id: UUID): Promise<Request>;
 }
