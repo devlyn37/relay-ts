@@ -3,7 +3,6 @@ import { RequestRepository } from "./RequestRepository";
 import { Hash } from "viem";
 import { UUID } from "crypto";
 import {
-  Request,
   SerializedGasFees,
   SerializedRequest,
   Status,

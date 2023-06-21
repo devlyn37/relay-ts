@@ -1,8 +1,9 @@
 import { Chain, Hash, PublicClient, Block, Address, Hex } from "viem";
 import { UUID, randomUUID } from "crypto";
 import { NonceManagedWallet } from "./NonceManagedWallet";
-import { GasFees, GasOracle } from "./gasOracle";
+import { GasOracle } from "./gasOracle";
 import EventEmitter from "events";
+import { GasFees } from "./TypesAndValidation";
 
 type TransactionData = {
   to: Address;

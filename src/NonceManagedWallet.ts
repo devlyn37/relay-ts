@@ -11,8 +11,8 @@ import {
   createPublicClient,
   PrivateKeyAccount,
 } from "viem";
-import { GasFees } from "./gasOracle";
 import { SequentialPromiseQueue } from "./SequentialPromiseQueue";
+import { GasFees } from "./TypesAndValidation";
 
 type ReplacementParams = {
   to: Address;
