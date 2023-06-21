@@ -1,8 +1,5 @@
 import { PublicClient } from "viem";
-
-export type GasFees =
-  | { gasPrice: bigint }
-  | { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+import { GasFees } from "./TypesAndValidation";
 
 export interface GasOracle {
   getCurrent(): Promise<GasFees>;
