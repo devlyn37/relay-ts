@@ -2,7 +2,7 @@ import { Chain, Hash, PublicClient, Block, Address, Hex } from "viem";
 import { NonceManagedWallet } from "./NonceManagedWallet";
 import { GasOracle } from "./gasOracle";
 import EventEmitter from "events";
-import { GasFees } from "./TypesAndValidation";
+import { GasFees, ObjectValues, objectValues } from "./TypesAndValidation";
 
 type TransactionData = {
   to: Address;
@@ -14,7 +14,23 @@ type TransactionData = {
   data?: Hex;
 };
 
+export const TransactionEvent = {
+  started: "transactionStarted",
+  retried: "transactionRetried",
+  retryFailed: "transactionRetryFailed",
+  completed: "transactionCompleted",
+  failed: "transactionFailed",
+} as const;
+export type TransactionEvent = ObjectValues<typeof TransactionEvents>;
+export const TransactionEvents = objectValues(TransactionEvent);
+
 export type TransactionStartedEvent = {
+  nonce: number;
+  hash: Hash;
+  fees: GasFees;
+};
+
+export type TransactionMintedEvent = {
   nonce: number;
   hash: Hash;
   fees: GasFees;
@@ -89,7 +105,7 @@ export class TransactionManager extends EventEmitter {
     });
 
     const e: TransactionStartedEvent = { nonce, hash, fees };
-    this.emit(`transactionStarted-${id}`, e);
+    this.emit(`${TransactionEvent.started}-${id}`, e);
   }
 
   private monitorBlocks() {
@@ -124,7 +140,7 @@ export class TransactionManager extends EventEmitter {
         console.log(`transaction ${hash} has been mined`);
         this.hashToUUID.delete(hash);
         this.pending.delete(id);
-        this.emit(`transactionMined-${id}`);
+        this.emit(`${TransactionEvent.completed}-${id}`);
       }
     }
 
@@ -167,9 +183,9 @@ export class TransactionManager extends EventEmitter {
       txn.blocksSpentWaiting = 0;
       txn.fees = retryFees;
       const e: TransactionRetriedEvent = { hash, fees: txn.fees };
-      this.emit(`transactionRetried-${id}`, e);
+      this.emit(`${TransactionEvent.retried}-${id}`, e);
     } catch (error) {
-      this.emit(`transactionRetryFailed-${id}`, error);
+      this.emit(`${TransactionEvent.retryFailed}-${id}`, error);
     }
   }
 

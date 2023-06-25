@@ -1,4 +1,5 @@
 import {
+  TransactionEvent,
   TransactionManager,
   TransactionRetriedEvent,
   TransactionStartedEvent,
@@ -46,14 +47,14 @@ export class RequestMediator {
     data?: Hex
   ) {
     this.transactionManager.once(
-      `transactionStarted-${id}`,
+      `${TransactionEvent.started}-${id}`,
       (e: TransactionStartedEvent) => {
         this.saveStartedTransaction({ ...e, to, value, data, id });
       }
     );
 
     this.transactionManager.on(
-      `transactionRetried-${id}`,
+      `${TransactionEvent.retried}-${id}`,
       (e: TransactionRetriedEvent) => {
         this.saveRetriedTransaction({ ...e, id });
       }
