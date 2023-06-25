@@ -29,14 +29,12 @@ export class MongoRequestRepository implements RequestRepository {
 
   async update(
     id: UUID,
-    status: Status,
-    hash: Hash,
-    fees: SerializedGasFees
+    update: { status?: Status; hash?: Hash; fees?: SerializedGasFees }
   ): Promise<void> {
     const collection = await this.getCollection();
     await collection.findOneAndUpdate(
       { id },
-      { $set: { status, hash, fees } },
+      { $set: update },
       { returnDocument: "after" }
     );
   }

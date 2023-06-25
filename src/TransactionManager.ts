@@ -15,11 +15,11 @@ type TransactionData = {
 };
 
 export const TransactionEvent = {
-  started: "transactionStarted",
-  retried: "transactionRetried",
-  retryFailed: "transactionRetryFailed",
-  completed: "transactionCompleted",
-  failed: "transactionFailed",
+  start: "transactionStarted",
+  retry: "transactionRetried",
+  failRetry: "transactionRetryFailed",
+  complete: "transactionCompleted",
+  fail: "transactionFailed",
 } as const;
 export type TransactionEvent = ObjectValues<typeof TransactionEvents>;
 export const TransactionEvents = objectValues(TransactionEvent);
@@ -30,7 +30,7 @@ export type TransactionStartedEvent = {
   fees: GasFees;
 };
 
-export type TransactionMintedEvent = {
+export type TransactionCompleteEvent = {
   nonce: number;
   hash: Hash;
   fees: GasFees;
@@ -105,7 +105,7 @@ export class TransactionManager extends EventEmitter {
     });
 
     const e: TransactionStartedEvent = { nonce, hash, fees };
-    this.emit(`${TransactionEvent.started}-${id}`, e);
+    this.emit(`${TransactionEvent.start}-${id}`, e);
   }
 
   private monitorBlocks() {
@@ -140,7 +140,7 @@ export class TransactionManager extends EventEmitter {
         console.log(`transaction ${hash} has been mined`);
         this.hashToUUID.delete(hash);
         this.pending.delete(id);
-        this.emit(`${TransactionEvent.completed}-${id}`);
+        this.emit(`${TransactionEvent.complete}-${id}`);
       }
     }
 
@@ -183,9 +183,9 @@ export class TransactionManager extends EventEmitter {
       txn.blocksSpentWaiting = 0;
       txn.fees = retryFees;
       const e: TransactionRetriedEvent = { hash, fees: txn.fees };
-      this.emit(`${TransactionEvent.retried}-${id}`, e);
+      this.emit(`${TransactionEvent.retry}-${id}`, e);
     } catch (error) {
-      this.emit(`${TransactionEvent.retryFailed}-${id}`, error);
+      this.emit(`${TransactionEvent.failRetry}-${id}`, error);
     }
   }
 

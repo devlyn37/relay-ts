@@ -47,14 +47,14 @@ export class RequestMediator {
     data?: Hex
   ) {
     this.transactionManager.once(
-      `${TransactionEvent.started}-${id}`,
+      `${TransactionEvent.start}-${id}`,
       (e: TransactionStartedEvent) => {
         this.saveStartedTransaction({ ...e, to, value, data, id });
       }
     );
 
     this.transactionManager.on(
-      `${TransactionEvent.retried}-${id}`,
+      `${TransactionEvent.retry}-${id}`,
       (e: TransactionRetriedEvent) => {
         this.saveRetriedTransaction({ ...e, id });
       }
@@ -106,12 +106,11 @@ export class RequestMediator {
     }
   ) {
     try {
-      await this.requestRepo.update(
-        params.id,
-        "pending",
-        params.hash,
-        serializeGasFees(params.fees)
-      );
+      await this.requestRepo.update(params.id, {
+        status: "pending",
+        hash: params.hash,
+        fees: serializeGasFees(params.fees),
+      });
     } catch (e) {
       console.error(
         "There was an error saving the transaction to the repository"
