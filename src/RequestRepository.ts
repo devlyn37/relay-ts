@@ -16,5 +16,5 @@ export interface RequestRepository {
       fees?: SerializedGasFees;
     }
   ): Promise<void>;
-  get(id: UUID): Promise<SerializedRequest>;
+  find(id: UUID): Promise<SerializedRequest | null>;
 }

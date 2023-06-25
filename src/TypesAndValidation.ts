@@ -74,7 +74,7 @@ export const request = z.object({
   nonce: z.number(),
   fees: gasFees,
   hash: hexWithPrefix,
-  data: hexWithPrefix.optional(),
+  data: hexWithPrefix.optional().nullable(),
 });
 export const deserializedRequest = request
   .extend({ fees: deserializedGasFees })
@@ -88,4 +88,3 @@ export const deserializedRequest = request
 
 export type SerializedRequest = z.infer<typeof request>;
 export type Request = z.infer<typeof deserializedRequest>;
-const test = deserializedRequest.parse("a");

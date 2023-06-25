@@ -39,12 +39,12 @@ export class MongoRequestRepository implements RequestRepository {
     );
   }
 
-  async get(id: UUID): Promise<SerializedRequest> {
+  async find(id: UUID): Promise<SerializedRequest | null> {
     const collection = await this.getCollection();
     const document = await collection.findOne<RequestDocument>({ id });
 
     if (!document) {
-      throw new Error("No request found with the given ID");
+      return null;
     }
 
     return request.parse(document);

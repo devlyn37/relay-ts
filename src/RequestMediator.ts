@@ -1,8 +1,9 @@
 import {
+  TransactionCompleteEvent,
   TransactionEvent,
   TransactionManager,
-  TransactionRetriedEvent,
-  TransactionStartedEvent,
+  TransactionRetryEvent,
+  TransactionStartEvent,
 } from "./TransactionManager";
 import { RequestRepository } from "./RequestRepository";
 import { UUID, randomUUID } from "crypto";
@@ -31,13 +32,14 @@ export class RequestMediator {
 
     try {
       await this.transactionManager.send(id, to, parseEther(value), data);
+      return id;
     } catch (e) {
       this.teardownListeners(id);
     }
   }
 
-  public async status(id: UUID) {
-    return this.requestRepo.get(id);
+  public async find(id: UUID) {
+    return this.requestRepo.find(id);
   }
 
   private setupListeners(
@@ -48,19 +50,30 @@ export class RequestMediator {
   ) {
     this.transactionManager.once(
       `${TransactionEvent.start}-${id}`,
-      (e: TransactionStartedEvent) => {
+      (e: TransactionStartEvent) => {
         this.saveStartedTransaction({ ...e, to, value, data, id });
       }
     );
 
     this.transactionManager.on(
       `${TransactionEvent.retry}-${id}`,
-      (e: TransactionRetriedEvent) => {
+      (e: TransactionRetryEvent) => {
         this.saveRetriedTransaction({ ...e, id });
       }
     );
 
-    // TODO Transaction Completed & Transaction Retry Failed
+    this.transactionManager.on(
+      `${TransactionEvent.complete}-${id}`,
+      (e: TransactionCompleteEvent) => {
+        this.saveCompletedTransaction(id);
+      }
+    );
+
+    this.transactionManager.on(`${TransactionEvent.complete}-${id}`, () => {
+      this.teardownListeners(id);
+    });
+
+    // TODO Transaction Retry Failed
   }
 
   private teardownListeners(id: UUID) {
@@ -72,13 +85,14 @@ export class RequestMediator {
   }
 
   private async saveStartedTransaction(
-    params: TransactionStartedEvent & {
+    params: TransactionStartEvent & {
       id: UUID;
       to: Address;
       value: `${number}`;
       data?: Hex;
     }
   ) {
+    console.info(`Transaction ${params.id} has been sent, saving to db`);
     try {
       await this.requestRepo.create({
         id: params.id,
@@ -92,6 +106,7 @@ export class RequestMediator {
         hash: params.hash,
         data: params.data,
       });
+      console.info(`Finished saving transaction ${params.id}`);
     } catch (e) {
       console.error(
         "There was an error saving the transaction to the repository"
@@ -101,15 +116,37 @@ export class RequestMediator {
   }
 
   private async saveRetriedTransaction(
-    params: TransactionRetriedEvent & {
+    params: TransactionRetryEvent & {
       id: UUID;
     }
   ) {
     try {
+      console.info(
+        `Retried transaction ${params.id}\n${JSON.stringify(
+          params,
+          undefined,
+          2
+        )}`
+      );
       await this.requestRepo.update(params.id, {
         hash: params.hash,
         fees: serializeGasFees(params.fees),
       });
+      console.info(`Finished updating the database`);
+    } catch (e) {
+      console.error(
+        "There was an error saving the transaction to the repository"
+      );
+      // do something
+    }
+  }
+  private async saveCompletedTransaction(id: UUID) {
+    try {
+      console.info(`transaction ${id} complete`);
+      await this.requestRepo.update(id, {
+        status: Status.complete,
+      });
+      console.info(`done saving`);
     } catch (e) {
       console.error(
         "There was an error saving the transaction to the repository"

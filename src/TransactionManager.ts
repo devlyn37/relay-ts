@@ -24,7 +24,7 @@ export const TransactionEvent = {
 export type TransactionEvent = ObjectValues<typeof TransactionEvent>;
 export const TransactionEvents = objectValues(TransactionEvent);
 
-export type TransactionStartedEvent = {
+export type TransactionStartEvent = {
   nonce: number;
   hash: Hash;
   fees: GasFees;
@@ -36,7 +36,7 @@ export type TransactionCompleteEvent = {
   fees: GasFees;
 };
 
-export type TransactionRetriedEvent = {
+export type TransactionRetryEvent = {
   hash: Hash;
   fees: GasFees;
 };
@@ -104,7 +104,7 @@ export class TransactionManager extends EventEmitter {
       hash,
     });
 
-    const e: TransactionStartedEvent = { nonce, hash, fees };
+    const e: TransactionStartEvent = { nonce, hash, fees };
     this.emit(`${TransactionEvent.start}-${id}`, e);
   }
 
@@ -182,7 +182,7 @@ export class TransactionManager extends EventEmitter {
       txn.hash = hash;
       txn.blocksSpentWaiting = 0;
       txn.fees = retryFees;
-      const e: TransactionRetriedEvent = { hash, fees: txn.fees };
+      const e: TransactionRetryEvent = { hash, fees: txn.fees };
       this.emit(`${TransactionEvent.retry}-${id}`, e);
     } catch (error) {
       this.emit(`${TransactionEvent.failRetry}-${id}`, error);
