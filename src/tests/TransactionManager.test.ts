@@ -12,6 +12,7 @@ import { test, describe, expect } from "vitest";
 import { TransactionManager } from "../TransactionManager.js";
 import { BaseGasOracle } from "../gasOracle.js";
 import { sleep } from "../utils.js";
+import { randomUUID } from "crypto";
 
 describe("TransactionManager", () => {
   test(
@@ -36,10 +37,8 @@ describe("TransactionManager", () => {
       });
 
       // send a transaction to monitor
-      const transactionId = await transactionManager.send(
-        ALICE,
-        parseEther("0.1")
-      );
+      const transactionId = randomUUID();
+      await transactionManager.send(transactionId, ALICE, parseEther("0.1"));
 
       // drop the transaction from the mempool so it doesn't get mined
       const hash = transactionManager.pending.get(transactionId)!.hash;
@@ -115,10 +114,8 @@ describe("TransactionManager", () => {
       });
 
       // send a transaction to monitor
-      const transactionId = await transactionManager.send(
-        ALICE,
-        parseEther("0.1")
-      );
+      const transactionId = randomUUID();
+      await transactionManager.send(transactionId, ALICE, parseEther("0.1"));
 
       // Drop the transaction, and mine a few blocks but not enough to trigger a retry
       const hash = transactionManager.pending.get(transactionId)!.hash;
@@ -154,10 +151,8 @@ describe("TransactionManager", () => {
       });
 
       // send a transaction to monitor
-      const transactionId = await transactionManager.send(
-        ALICE,
-        parseEther("0.1")
-      );
+      const transactionId = randomUUID();
+      await transactionManager.send(transactionId, ALICE, parseEther("0.1"));
       const initialHash = transactionManager.pending.get(transactionId)!.hash;
 
       // mine a block, the previous transaction won't get mined because it's gas values are too low

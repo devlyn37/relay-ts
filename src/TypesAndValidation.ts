@@ -27,20 +27,36 @@ const gasFees = z.union([
     maxPriorityFeePerGas: z.string(),
   }),
 ]);
-const deserializedGasFees = gasFees.transform((val) => {
-  if ("gasPrice" in val) {
-    return { gasPrice: BigInt(val.gasPrice) } as {
+export type SerializedGasFees = z.infer<typeof gasFees>;
+
+export function deserializeGasFees(fees: SerializedGasFees) {
+  if ("gasPrice" in fees) {
+    return { gasPrice: BigInt(fees.gasPrice) } as {
       gasPrice: bigint;
     };
   } else {
     return {
-      maxFeePerGas: BigInt(val.maxFeePerGas),
-      maxPriorityFeePerGas: BigInt(val.maxPriorityFeePerGas),
+      maxFeePerGas: BigInt(fees.maxFeePerGas),
+      maxPriorityFeePerGas: BigInt(fees.maxPriorityFeePerGas),
     } as { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
   }
-});
+}
+
+const deserializedGasFees = gasFees.transform(deserializeGasFees);
 export type GasFees = z.infer<typeof deserializedGasFees>;
-export type SerializedGasFees = z.infer<typeof gasFees>;
+
+export function serializeGasFees(fees: GasFees) {
+  if ("gasPrice" in fees) {
+    return { gasPrice: fees.gasPrice.toString() } as {
+      gasPrice: string;
+    };
+  } else {
+    return {
+      maxFeePerGas: fees.maxFeePerGas.toString(),
+      maxPriorityFeePerGas: fees.maxPriorityFeePerGas.toString(),
+    } as { maxFeePerGas: string; maxPriorityFeePerGas: string };
+  }
+}
 
 export const request = z.object({
   id: strictUUID,
@@ -52,7 +68,7 @@ export const request = z.object({
   nonce: z.number(),
   fees: gasFees,
   hash: hexWithPrefix,
-  data: hexWithPrefix,
+  data: hexWithPrefix.optional(),
 });
 export const deserializedRequest = request
   .extend({ fees: deserializedGasFees })
