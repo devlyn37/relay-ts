@@ -7,7 +7,7 @@ import {
 import { RequestRepository } from "./RequestRepository";
 import { UUID, randomUUID } from "crypto";
 import { Address, Hex, parseEther } from "viem";
-import { serializeGasFees } from "./TypesAndValidation";
+import { Status, serializeGasFees } from "./TypesAndValidation";
 
 export class RequestMediator {
   private transactionManager: TransactionManager; // TODO add many for many different chains
@@ -82,7 +82,7 @@ export class RequestMediator {
     try {
       await this.requestRepo.create({
         id: params.id,
-        status: "pending",
+        status: Status.pending,
         to: params.to,
         from: this.transactionManager.signerAddress,
         chainId: this.transactionManager.chain.id,
@@ -107,7 +107,6 @@ export class RequestMediator {
   ) {
     try {
       await this.requestRepo.update(params.id, {
-        status: "pending",
         hash: params.hash,
         fees: serializeGasFees(params.fees),
       });

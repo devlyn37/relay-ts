@@ -16,12 +16,13 @@ const strictUUID =
     );
   });
 
-const status = z.union([
-  z.literal("pending"),
-  z.literal("complete"),
-  z.literal("failed"),
-]);
-export type Status = z.infer<typeof status>;
+export const Status = {
+  pending: "pending",
+  complete: "complete",
+  failed: "failed",
+} as const;
+export type Status = ObjectValues<typeof Status>;
+const status = z.nativeEnum(Status);
 
 const gasFees = z.union([
   z.object({

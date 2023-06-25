@@ -11,9 +11,9 @@ export interface RequestRepository {
   update(
     id: UUID,
     update: {
-      status: Status;
-      hash: Hash;
-      fees: SerializedGasFees;
+      status?: Status;
+      hash?: Hash;
+      fees?: SerializedGasFees;
     }
   ): Promise<void>;
   get(id: UUID): Promise<SerializedRequest>;

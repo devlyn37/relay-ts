@@ -21,7 +21,7 @@ export const TransactionEvent = {
   complete: "transactionCompleted",
   fail: "transactionFailed",
 } as const;
-export type TransactionEvent = ObjectValues<typeof TransactionEvents>;
+export type TransactionEvent = ObjectValues<typeof TransactionEvent>;
 export const TransactionEvents = objectValues(TransactionEvent);
 
 export type TransactionStartedEvent = {
