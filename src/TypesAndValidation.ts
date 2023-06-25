@@ -5,16 +5,35 @@ export function objectValues<T extends object>(obj: T): T[keyof T][] {
   return Object.values(obj);
 }
 
-const hexWithPrefix = z.custom<`0x${string}`>((val) => {
-  return /^0x[a-fA-F0-9]+$/.test(val as string);
-});
+const hexWithPrefix = z.custom<`0x${string}`>(
+  (val) => {
+    return /^0x[a-fA-F0-9]+$/.test(val as string);
+  },
+  {
+    message: "Expected string to be a valid Hex",
+  }
+);
 
-const strictUUID =
-  z.custom<`${string}-${string}-${string}-${string}-${string}`>((val) => {
-    return /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/.test(
-      val as string
-    );
-  });
+export const strictUUID =
+  z.custom<`${string}-${string}-${string}-${string}-${string}`>(
+    (val) => {
+      return /^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/.test(
+        val as string
+      );
+    },
+    {
+      message: "Expected string to be a valid UUID",
+    }
+  );
+
+const stringNumber = z.custom<`${number}`>(
+  (val) => {
+    return !isNaN(Number(val));
+  },
+  {
+    message: "Expected string to be convertible to a number",
+  }
+);
 
 export const Status = {
   pending: "pending",
@@ -70,7 +89,7 @@ export const request = z.object({
   to: hexWithPrefix,
   from: hexWithPrefix,
   chainId: z.number(),
-  value: z.string(), // bigint represented as string
+  value: stringNumber, // bigint represented as string
   nonce: z.number(),
   fees: gasFees,
   hash: hexWithPrefix,
@@ -85,6 +104,12 @@ export const deserializedRequest = request
       fees: val.fees as GasFees, // Why do I need this cast here?
     };
   });
+
+export const createRequestInput = z.object({
+  to: hexWithPrefix,
+  value: stringNumber,
+  data: hexWithPrefix.optional(),
+});
 
 export type SerializedRequest = z.infer<typeof request>;
 export type Request = z.infer<typeof deserializedRequest>;

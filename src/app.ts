@@ -8,6 +8,7 @@ import { BaseGasOracle } from "./gasOracle";
 import { RequestMediator } from "./RequestMediator";
 import { MongoRequestRepository } from "./MongoRequestRepo";
 import "dotenv/config";
+import { createRequestInput, strictUUID } from "./TypesAndValidation";
 
 const app: Application = express();
 const port: number = 3001;
@@ -29,7 +30,7 @@ const mediator = new RequestMediator(manager, repo);
 
 // Make sure events emitted from handler don't stop the node process
 manager.on("error", (error) => {
-  console.error("An error occurred:", error);
+  console.error("An error occurred on the transaction manager", error);
   // handle error
 });
 
@@ -44,12 +45,15 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 app.post("/tx", async (req: Request, res: Response, next: NextFunction) => {
+  const result = createRequestInput.safeParse(req.body);
+
+  if (!result.success) {
+    return res.status(400).json(result.error.format());
+  }
+  const { to, value, data } = result.data;
+
   try {
-    const id = await mediator.start(
-      req.body.to as any,
-      req.body.value as any,
-      req.body.data as any
-    );
+    const id = await mediator.start(to, value, data);
     return res.status(200).json({ id });
   } catch (error) {
     next(error);
@@ -57,8 +61,14 @@ app.post("/tx", async (req: Request, res: Response, next: NextFunction) => {
 });
 
 app.get("/tx/:id", async (req: Request, res: Response, next: NextFunction) => {
+  const result = strictUUID.safeParse(req.params.id);
+  if (!result.success) {
+    return res.status(400).json(result.error.format());
+  }
+  const id = result.data;
+
   try {
-    const request = await mediator.find(req.params.id as any);
+    const request = await mediator.find(id);
 
     if (request === null) {
       return res.status(404);

@@ -33,8 +33,9 @@ export class RequestMediator {
     try {
       await this.transactionManager.send(id, to, parseEther(value), data);
       return id;
-    } catch (e) {
+    } catch (error) {
       this.teardownListeners(id);
+      throw error;
     }
   }
 
