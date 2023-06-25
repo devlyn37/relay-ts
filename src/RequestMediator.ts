@@ -25,13 +25,18 @@ export class RequestMediator {
     this.requestRepo = requestRepo;
   }
 
-  public async start(to: Address, value: `${number}`, data?: Hex) {
+  public async start(
+    to: Address,
+    from: Address,
+    value: `${number}`,
+    data?: Hex
+  ) {
     const id = randomUUID();
 
-    this.setupListeners(id, to, value, data);
+    this.setupListeners(id, to, from, value, data);
 
     try {
-      await this.transactionManager.send(id, to, parseEther(value), data);
+      await this.transactionManager.send(id, to, from, parseEther(value), data);
       return id;
     } catch (error) {
       this.teardownListeners(id);
@@ -46,13 +51,14 @@ export class RequestMediator {
   private setupListeners(
     id: UUID,
     to: Address,
+    from: Address,
     value: `${number}`,
     data?: Hex
   ) {
     this.transactionManager.once(
       `${TransactionEvent.start}-${id}`,
       (e: TransactionStartEvent) => {
-        this.saveStartedTransaction({ ...e, to, value, data, id });
+        this.saveStartedTransaction({ ...e, to, from, value, data, id });
       }
     );
 
@@ -88,6 +94,7 @@ export class RequestMediator {
   private async saveStartedTransaction(
     params: TransactionStartEvent & {
       id: UUID;
+      from: Address;
       to: Address;
       value: `${number}`;
       data?: Hex;
@@ -99,7 +106,7 @@ export class RequestMediator {
         id: params.id,
         status: Status.pending,
         to: params.to,
-        from: this.transactionManager.signerAddress,
+        from: params.from,
         chainId: this.transactionManager.chain.id,
         value: params.value,
         nonce: params.nonce,

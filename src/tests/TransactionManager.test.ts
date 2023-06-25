@@ -7,7 +7,7 @@ import {
   testChain,
   testClient,
 } from "./utils.js";
-import { parseEther, parseGwei, webSocket } from "viem";
+import { formatEther, parseEther, parseGwei, webSocket } from "viem";
 import { test, describe, expect } from "vitest";
 import { TransactionManager } from "../TransactionManager.js";
 import { BaseGasOracle } from "../gasOracle.js";
@@ -26,7 +26,7 @@ describe("TransactionManager", () => {
       const transactionManager = new TransactionManager(
         testChain,
         publicClient,
-        managedWallet,
+        [managedWallet],
         new BaseGasOracle(publicClient),
         5
       );
@@ -38,7 +38,12 @@ describe("TransactionManager", () => {
 
       // send a transaction to monitor
       const transactionId = randomUUID();
-      await transactionManager.send(transactionId, ALICE, parseEther("0.1"));
+      await transactionManager.send(
+        transactionId,
+        ALICE,
+        managedWallet.address,
+        parseEther("0.1")
+      );
 
       // drop the transaction from the mempool so it doesn't get mined
       const hash = transactionManager.pending.get(transactionId)!.hash;
@@ -103,7 +108,7 @@ describe("TransactionManager", () => {
       const transactionManager = new TransactionManager(
         testChain,
         publicClient,
-        managedWallet,
+        [managedWallet],
         new BaseGasOracle(publicClient),
         5
       );
@@ -115,7 +120,12 @@ describe("TransactionManager", () => {
 
       // send a transaction to monitor
       const transactionId = randomUUID();
-      await transactionManager.send(transactionId, ALICE, parseEther("0.1"));
+      await transactionManager.send(
+        transactionId,
+        ALICE,
+        managedWallet.address,
+        parseEther("0.1")
+      );
 
       // Drop the transaction, and mine a few blocks but not enough to trigger a retry
       const hash = transactionManager.pending.get(transactionId)!.hash;
@@ -140,7 +150,7 @@ describe("TransactionManager", () => {
       const transactionManager = new TransactionManager(
         testChain,
         publicClient,
-        managedWallet,
+        [managedWallet],
         new BaseGasOracle(publicClient),
         1
       );
@@ -152,7 +162,12 @@ describe("TransactionManager", () => {
 
       // send a transaction to monitor
       const transactionId = randomUUID();
-      await transactionManager.send(transactionId, ALICE, parseEther("0.1"));
+      await transactionManager.send(
+        transactionId,
+        ALICE,
+        managedWallet.address,
+        parseEther("0.1")
+      );
       const initialHash = transactionManager.pending.get(transactionId)!.hash;
 
       // mine a block, the previous transaction won't get mined because it's gas values are too low
@@ -184,6 +199,75 @@ describe("TransactionManager", () => {
         managedWallet.address
       );
       expect(pendingFinal.length).to.eq(0);
+    },
+    { timeout: 30000 }
+  );
+  test(
+    "Can manage more than a single wallet",
+    async () => {
+      const managedWallet1 = new NonceManagedWallet(
+        privateKeyToAccount(generatePrivateKey()),
+        webSocket(),
+        testChain
+      );
+      const managedWallet2 = new NonceManagedWallet(
+        privateKeyToAccount(generatePrivateKey()),
+        webSocket(),
+        testChain
+      );
+      const transactionManager = new TransactionManager(
+        testChain,
+        publicClient,
+        [managedWallet1, managedWallet2],
+        new BaseGasOracle(publicClient),
+        1
+      );
+
+      await testClient.setBalance({
+        address: managedWallet1.address,
+        value: parseEther("1"),
+      });
+      await testClient.setBalance({
+        address: managedWallet2.address,
+        value: parseEther("1"),
+      });
+
+      // send a transaction to monitor
+      const transactionId1 = randomUUID();
+      await transactionManager.send(
+        transactionId1,
+        ALICE,
+        managedWallet1.address,
+        parseEther("0.1")
+      );
+      const transactionId2 = randomUUID();
+      await transactionManager.send(
+        transactionId2,
+        ALICE,
+        managedWallet2.address,
+        parseEther("0.1")
+      );
+
+      // Check that both wallets have a single transaction in the mempool
+      let pendingAddress1 = await getPendingTxnsForAddress(
+        managedWallet1.address
+      );
+      expect(pendingAddress1.length).to.eq(1);
+      let pendingAddress2 = await getPendingTxnsForAddress(
+        managedWallet2.address
+      );
+      expect(pendingAddress2.length).to.eq(1);
+
+      await testClient.mine({ blocks: 1 });
+      await sleep(500);
+
+      // Check that both wallet had their transactions mined
+      expect(transactionManager.pending.has(transactionId1)).toBe(false);
+      expect(transactionManager.pending.has(transactionId2)).toBe(false);
+      pendingAddress1 = await getPendingTxnsForAddress(managedWallet1.address);
+      expect(pendingAddress1.length).to.eq(0);
+      pendingAddress2 = await getPendingTxnsForAddress(managedWallet2.address);
+      expect(pendingAddress2.length).to.eq(0);
     },
     { timeout: 30000 }
   );

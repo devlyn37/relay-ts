@@ -6,6 +6,7 @@ import { GasFees, ObjectValues, objectValues } from "./TypesAndValidation";
 
 type TransactionData = {
   to: Address;
+  from: Address;
   value: bigint;
   nonce: number;
   blocksSpentWaiting: number;
@@ -50,34 +51,49 @@ export class DuplicateIdError extends Error {
   }
 }
 
+export class WalletNotFoundError extends Error {
+  public address: string;
+
+  constructor(address: string, message: string) {
+    super(message);
+    this.address = address;
+  }
+}
+
 export class TransactionManager extends EventEmitter {
   public chain: Chain;
   public pending: Map<string, TransactionData> = new Map();
   public hashToUUID: Map<Hash, string> = new Map();
 
   private client: PublicClient;
-  private managedWallet: NonceManagedWallet;
+  private managedWallets: NonceManagedWallet[];
   private blockRetry: number;
   private gasOracle: GasOracle;
 
   constructor(
     chain: Chain,
     client: PublicClient,
-    managedWallet: NonceManagedWallet,
+    managedWallets: NonceManagedWallet[],
     gasOracle: GasOracle,
     blockRetry: number
   ) {
     super({ captureRejections: true });
     this.chain = chain;
     this.client = client;
-    this.managedWallet = managedWallet;
+    this.managedWallets = managedWallets;
     this.blockRetry = blockRetry;
     this.gasOracle = gasOracle;
 
     this.monitorBlocks();
   }
 
-  public async send(id: string, to: Address, value: bigint, data?: Hex) {
+  public async send(
+    id: string,
+    to: Address,
+    from: Address,
+    value: bigint,
+    data?: Hex
+  ) {
     if (this.pending.has(id)) {
       throw new DuplicateIdError(
         id,
@@ -85,17 +101,24 @@ export class TransactionManager extends EventEmitter {
       );
     }
 
-    const fees = await this.gasOracle.getCurrent();
-    const { hash, nonce } = await this.managedWallet.send(
-      to,
-      value,
-      fees,
-      data
+    const fromWallet = this.managedWallets.find(
+      (wallet) => from === wallet.address
     );
+
+    if (fromWallet === undefined) {
+      throw new WalletNotFoundError(
+        from,
+        `wallet ${from} not managed on ${this.chain.name}`
+      );
+    }
+
+    const fees = await this.gasOracle.getCurrent();
+    const { hash, nonce } = await fromWallet.send(to, value, fees, data);
 
     this.hashToUUID.set(hash, id);
     this.pending.set(id, {
       to,
+      from,
       value,
       data,
       blocksSpentWaiting: 0,
@@ -106,6 +129,10 @@ export class TransactionManager extends EventEmitter {
 
     const e: TransactionStartEvent = { nonce, hash, fees };
     this.emit(`${TransactionEvent.start}-${id}`, e);
+  }
+
+  public get signers() {
+    return this.managedWallets.map((w) => w.address);
   }
 
   private monitorBlocks() {
@@ -171,7 +198,8 @@ export class TransactionManager extends EventEmitter {
   ) {
     try {
       const retryFees = this.gasOracle.getRetry(txn.fees, oracleEstimate);
-      const hash = await this.managedWallet.replace({
+      const fromWallet = this.getWallet(txn.from);
+      const hash = await fromWallet.replace({
         ...txn,
         fees: retryFees,
         previousHash: txn.hash,
@@ -189,8 +217,16 @@ export class TransactionManager extends EventEmitter {
     }
   }
 
-  // temporary function while a manager only has a single signer
-  public get signerAddress() {
-    return this.managedWallet.address;
+  private getWallet(address: Address) {
+    const wallet = this.managedWallets.find((w) => w.address === address);
+
+    if (wallet === undefined) {
+      throw new WalletNotFoundError(
+        address,
+        `wallet ${address} not managed on ${this.chain.name}`
+      );
+    }
+
+    return wallet;
   }
 }

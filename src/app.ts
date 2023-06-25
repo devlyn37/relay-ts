@@ -7,24 +7,25 @@ import { privateKeyToAccount } from "viem/accounts";
 import { BaseGasOracle } from "./gasOracle";
 import { RequestMediator } from "./RequestMediator";
 import { MongoRequestRepository } from "./MongoRequestRepo";
-import "dotenv/config";
-import { createRequestInput, strictUUID } from "./TypesAndValidation";
+import {
+  createRequestInput,
+  hexWithPrefix,
+  strictUUID,
+} from "./TypesAndValidation";
+import { env } from "./env";
+import { ZodError } from "zod";
 
 const app: Application = express();
 const port: number = 3001;
 app.use(express.json());
 
-const account = privateKeyToAccount(process.env.PK! as any);
 const client = createPublicClient({ chain: foundry, transport: webSocket() });
-const managedWallet = new NonceManagedWallet(account, webSocket(), foundry);
+const wallets = env.KEYS.split(",").map((pk) => {
+  const account = privateKeyToAccount(pk as any);
+  return new NonceManagedWallet(account, webSocket(), foundry);
+});
 const oracle = new BaseGasOracle(client);
-const manager = new TransactionManager(
-  foundry,
-  client,
-  managedWallet,
-  oracle,
-  3
-);
+const manager = new TransactionManager(foundry, client, wallets, oracle, 3);
 const repo = new MongoRequestRepository(process.env.MONGO_DATABASE! as any);
 const mediator = new RequestMediator(manager, repo);
 
@@ -44,30 +45,28 @@ process.on("unhandledRejection", (reason, promise) => {
   // process.exit(1); //mandatory (as per the Node.js docs)
 });
 
-app.post("/tx", async (req: Request, res: Response, next: NextFunction) => {
-  const result = createRequestInput.safeParse(req.body);
+app.post(
+  "/key/:address/tx",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { to, value, data } = createRequestInput.parse(req.body);
+      const address = hexWithPrefix.parse(req.params.address);
 
-  if (!result.success) {
-    return res.status(400).json(result.error.format());
-  }
-  const { to, value, data } = result.data;
+      const id = await mediator.start(to, address, value, data);
+      return res.status(200).json({ id });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json(error.format());
+      }
 
-  try {
-    const id = await mediator.start(to, value, data);
-    return res.status(200).json({ id });
-  } catch (error) {
-    next(error);
+      next(error);
+    }
   }
-});
+);
 
 app.get("/tx/:id", async (req: Request, res: Response, next: NextFunction) => {
-  const result = strictUUID.safeParse(req.params.id);
-  if (!result.success) {
-    return res.status(400).json(result.error.format());
-  }
-  const id = result.data;
-
   try {
+    const id = strictUUID.parse(req.params.id);
     const request = await mediator.find(id);
 
     if (request === null) {
@@ -75,6 +74,10 @@ app.get("/tx/:id", async (req: Request, res: Response, next: NextFunction) => {
     }
     return res.status(200).json(request);
   } catch (error) {
+    if (error instanceof ZodError) {
+      return res.status(400).json(error.format());
+    }
+
     next(error);
   }
 });
