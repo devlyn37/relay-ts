@@ -1,5 +1,4 @@
 import { Chain, Hash, PublicClient, Block, Address, Hex } from "viem";
-import { UUID, randomUUID } from "crypto";
 import { NonceManagedWallet } from "./NonceManagedWallet";
 import { GasOracle } from "./gasOracle";
 import EventEmitter from "events";
@@ -15,10 +14,30 @@ type TransactionData = {
   data?: Hex;
 };
 
+export type TransactionStartedEvent = {
+  nonce: number;
+  hash: Hash;
+  fees: GasFees;
+};
+
+export type TransactionRetriedEvent = {
+  hash: Hash;
+  fees: GasFees;
+};
+
+export class DuplicateIdError extends Error {
+  public id: string;
+
+  constructor(id: string, message: string) {
+    super(message);
+    this.id = id;
+  }
+}
+
 export class TransactionManager extends EventEmitter {
   public chain: Chain;
-  public pending: Map<UUID, TransactionData> = new Map();
-  public hashToUUID: Map<Hash, UUID> = new Map();
+  public pending: Map<string, TransactionData> = new Map();
+  public hashToUUID: Map<Hash, string> = new Map();
 
   private client: PublicClient;
   private managedWallet: NonceManagedWallet;
@@ -42,8 +61,14 @@ export class TransactionManager extends EventEmitter {
     this.monitorBlocks();
   }
 
-  public async send(to: Address, value: bigint, data?: Hex) {
-    const id = randomUUID();
+  public async send(id: string, to: Address, value: bigint, data?: Hex) {
+    if (this.pending.has(id)) {
+      throw new DuplicateIdError(
+        id,
+        `Transaction with id ${id} has already been sent`
+      );
+    }
+
     const fees = await this.gasOracle.getCurrent();
     const { hash, nonce } = await this.managedWallet.send(
       to,
@@ -51,6 +76,7 @@ export class TransactionManager extends EventEmitter {
       fees,
       data
     );
+
     this.hashToUUID.set(hash, id);
     this.pending.set(id, {
       to,
@@ -62,7 +88,8 @@ export class TransactionManager extends EventEmitter {
       hash,
     });
 
-    return id;
+    const e: TransactionStartedEvent = { nonce, hash, fees };
+    this.emit(`transactionStarted-${id}`, e);
   }
 
   private monitorBlocks() {
@@ -91,26 +118,26 @@ export class TransactionManager extends EventEmitter {
   private async processBlock(block: Block) {
     for (const txn of block.transactions) {
       const hash = typeof txn === "string" ? txn : txn.hash;
-      const uuid = this.hashToUUID.get(hash);
+      const id = this.hashToUUID.get(hash);
 
-      if (uuid !== undefined) {
+      if (id !== undefined) {
         console.log(`transaction ${hash} has been mined`);
         this.hashToUUID.delete(hash);
-        this.pending.delete(uuid);
-        this.emit(`transactionMined-${uuid}`);
+        this.pending.delete(id);
+        this.emit(`transactionMined-${id}`);
       }
     }
 
     const pending = [...this.pending.entries()];
     const retries = [];
 
-    for (const [uuid, txn] of pending) {
+    for (const [id, txn] of pending) {
       txn.blocksSpentWaiting++;
       let oracleEstimate: GasFees | undefined = undefined;
 
       if (txn.blocksSpentWaiting >= this.blockRetry) {
         oracleEstimate = oracleEstimate ?? (await this.gasOracle.getCurrent()); // Let's only fetch this once
-        retries.push(this.retryTransaction(uuid, txn, oracleEstimate));
+        retries.push(this.retryTransaction(id, txn, oracleEstimate));
       }
     }
 
@@ -122,7 +149,7 @@ export class TransactionManager extends EventEmitter {
   }
 
   private async retryTransaction(
-    uuid: UUID,
+    id: string,
     txn: TransactionData,
     oracleEstimate: GasFees
   ) {
@@ -135,13 +162,19 @@ export class TransactionManager extends EventEmitter {
       });
 
       this.hashToUUID.delete(txn.hash);
-      this.hashToUUID.set(hash, uuid);
+      this.hashToUUID.set(hash, id);
       txn.hash = hash;
       txn.blocksSpentWaiting = 0;
       txn.fees = retryFees;
-      this.emit(`transactionRetried-${uuid}`, { hash, fees: txn.fees });
-    } catch (e) {
-      this.emit(`transactionRetryFailed-${uuid}`, e);
+      const e: TransactionRetriedEvent = { hash, fees: txn.fees };
+      this.emit(`transactionRetried-${id}`, e);
+    } catch (error) {
+      this.emit(`transactionRetryFailed-${id}`, error);
     }
+  }
+
+  // temporary function while a manager only has a single signer
+  public get signerAddress() {
+    return this.managedWallet.address;
   }
 }

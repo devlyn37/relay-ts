@@ -23,13 +23,8 @@ export class MongoRequestRepository implements RequestRepository {
   }
 
   public async create(request: SerializedRequest): Promise<void> {
-    try {
-      const collection = await this.getCollection();
-      await collection.insertOne(request);
-    } catch (err) {
-      console.error(`Failed to create a new request: ${err}`);
-      throw err;
-    }
+    const collection = await this.getCollection();
+    await collection.insertOne(request);
   }
 
   async update(
@@ -38,33 +33,23 @@ export class MongoRequestRepository implements RequestRepository {
     hash: Hash,
     fees: SerializedGasFees
   ): Promise<void> {
-    try {
-      const collection = await this.getCollection();
-      await collection.findOneAndUpdate(
-        { id },
-        { $set: { status, hash, fees } },
-        { returnDocument: "after" }
-      );
-    } catch (err) {
-      console.error(`Failed to update the request: ${err}`);
-      throw err;
-    }
+    const collection = await this.getCollection();
+    await collection.findOneAndUpdate(
+      { id },
+      { $set: { status, hash, fees } },
+      { returnDocument: "after" }
+    );
   }
 
   async get(id: UUID): Promise<SerializedRequest> {
-    try {
-      const collection = await this.getCollection();
-      const document = await collection.findOne<RequestDocument>({ id });
+    const collection = await this.getCollection();
+    const document = await collection.findOne<RequestDocument>({ id });
 
-      if (!document) {
-        throw new Error("No request found with the given ID");
-      }
-
-      return request.parse(document);
-    } catch (err) {
-      console.error(`Failed to get the request: ${err}`);
-      throw err;
+    if (!document) {
+      throw new Error("No request found with the given ID");
     }
+
+    return request.parse(document);
   }
 
   private async getCollection(): Promise<Collection<RequestDocument>> {
