@@ -9,6 +9,8 @@ import { env } from "./env";
 import { RequestMediator } from "./RequestMediator";
 
 export async function setup(): Promise<RequestMediator> {
+  console.info(`Loading env...`);
+
   // parse wallets from private keys
   const accounts = env.KEYS.split(",").map((pk) =>
     privateKeyToAccount(pk as any)
@@ -24,7 +26,17 @@ export async function setup(): Promise<RequestMediator> {
   };
   await Promise.all(webSockets.map(addManagerFromWebSocket));
 
-  // TODO nice log for result;
+  let accountLog = "Loaded accounts:";
+  for (const account of accounts) {
+    accountLog += "\n" + account.address;
+  }
+  console.info(accountLog);
+
+  let chainLog = "Running on chains:";
+  for (const manager of managers.values()) {
+    chainLog += "\n" + manager.chain.name;
+  }
+  console.info(chainLog);
 
   // assemble
   const repo = new MongoRequestRepository(process.env.MONGO_DATABASE! as any);
