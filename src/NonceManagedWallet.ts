@@ -11,8 +11,8 @@ import {
   createPublicClient,
   PrivateKeyAccount,
 } from "viem";
-import { SequentialPromiseQueue } from "./SequentialPromiseQueue";
 import { GasFees } from "./TypesAndValidation";
+import { sleep } from "./utils";
 
 type ReplacementParams = {
   to: Address;
@@ -40,18 +40,20 @@ export class NonceManagedWallet {
   private wallet: WalletClient;
   private client: PublicClient;
   private account: Account;
-  private queue = new SequentialPromiseQueue();
+  private queue: SequentialPromiseQueue;
 
   constructor(
     account: PrivateKeyAccount,
     transport: Transport,
     chain: Chain,
+    delayMs: number = 500,
     initialNonce?: number
   ) {
     this.chain = chain;
     this.account = account;
     this.address = account.address;
     this.managedNonce = initialNonce;
+    this.queue = new SequentialPromiseQueue(delayMs);
     this.client = createPublicClient({ chain, transport });
     this.wallet = createWalletClient({
       account,
@@ -65,19 +67,11 @@ export class NonceManagedWallet {
   }
 
   public async send(to: Address, value: bigint, fees?: GasFees, data?: Hex) {
-    const callback = () => {
-      return this.sendTransaction(to, value, fees, data);
-    };
-
-    return this.queue.push(callback);
+    return this.queue.push(() => this.sendTransaction(to, value, fees, data));
   }
 
   public async replace(params: ReplacementParams) {
-    const callback = () => {
-      return this.replaceTransaction(params);
-    };
-
-    return this.queue.push(callback);
+    return this.queue.push(() => this.replaceTransaction(params));
   }
 
   private async sendTransaction(
@@ -124,7 +118,7 @@ export class NonceManagedWallet {
 
     throw new NonceRetryLimitError(
       originalNonce,
-      "Tried resetting nonce too many times, someone is using the account externally"
+      `Tried resetting nonce too many times, someone is using the account ${this.address} externally`
     );
   }
 
@@ -153,5 +147,47 @@ export class NonceManagedWallet {
 
       throw e;
     }
+  }
+}
+class SequentialPromiseQueue {
+  private queue: {
+    callback: () => Promise<any>;
+    resolve: (value: any) => void;
+    reject: (e: any) => void;
+  }[] = [];
+  private isProcessingQueue: boolean = false; // Flag to check if queue processing is ongoing
+  private delayMs: number;
+
+  constructor(delayMs: number) {
+    this.delayMs = delayMs;
+  }
+
+  public async push<T>(callback: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ callback, resolve, reject });
+
+      if (!this.isProcessingQueue) {
+        this.processQueue();
+      }
+    });
+  }
+
+  private async processQueue() {
+    this.isProcessingQueue = true;
+
+    while (this.queue.length > 0) {
+      const { callback, resolve, reject } = this.queue.shift()!;
+
+      try {
+        const result = await callback();
+        resolve(result);
+      } catch (e: any) {
+        reject(e);
+      }
+
+      await sleep(this.delayMs);
+    }
+
+    this.isProcessingQueue = false;
   }
 }

@@ -38,12 +38,7 @@ async function startServer(port: number) {
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         const id = strictUUID.parse(req.params.id);
-
-        console.log("finding request");
         const request = await mediator.find(id);
-        console.log("done finding request");
-
-        console.log(request);
 
         if (request === null) {
           return res.status(404).end();
