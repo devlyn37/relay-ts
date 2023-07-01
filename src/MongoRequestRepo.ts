@@ -3,17 +3,16 @@ import { RequestRepository } from "./RequestRepository";
 import { Hash } from "viem";
 import { UUID } from "crypto";
 import {
-  SerializedGasFees,
-  SerializedRequest,
+  GasFees,
   Status,
   request,
+  Request,
+  serializeWithBigInt,
 } from "./TypesAndValidation";
-
-type RequestDocument = SerializedRequest & Document;
 
 export class MongoRequestRepository implements RequestRepository {
   private connectionPromise: Promise<MongoClient> | null = null;
-  private collection: Collection<RequestDocument> | null = null;
+  private collection: Collection | null = null;
   private uri: string;
   private dbName = "TreasuryService";
   private collectionName = "requests";
@@ -22,26 +21,26 @@ export class MongoRequestRepository implements RequestRepository {
     this.uri = uri;
   }
 
-  public async create(request: SerializedRequest): Promise<void> {
+  public async create(request: Request): Promise<void> {
     const collection = await this.getCollection();
-    await collection.insertOne(request);
+    await collection.insertOne(serializeWithBigInt(request));
   }
 
   async update(
     id: UUID,
-    update: { status?: Status; hash?: Hash; fees?: SerializedGasFees }
+    update: { status?: Status; hash?: Hash; fees?: GasFees }
   ): Promise<void> {
     const collection = await this.getCollection();
+
     await collection.findOneAndUpdate(
       { id },
-      { $set: update },
-      { returnDocument: "after" }
+      { $set: serializeWithBigInt(update) }
     );
   }
 
-  async find(id: UUID): Promise<SerializedRequest | null> {
+  async find(id: UUID): Promise<Request | null> {
     const collection = await this.getCollection();
-    const document = await collection.findOne<RequestDocument>({ id });
+    const document = await collection.findOne({ id });
 
     if (!document) {
       return null;
@@ -50,7 +49,7 @@ export class MongoRequestRepository implements RequestRepository {
     return request.parse(document);
   }
 
-  private async getCollection(): Promise<Collection<RequestDocument>> {
+  private async getCollection(): Promise<Collection> {
     if (this.collection != null) {
       return this.collection;
     }
@@ -61,9 +60,7 @@ export class MongoRequestRepository implements RequestRepository {
     }
 
     const client = await this.connectionPromise;
-    const collection = client
-      .db(this.dbName)
-      .collection<RequestDocument>(this.collectionName);
+    const collection = client.db(this.dbName).collection(this.collectionName);
     this.collection = collection;
     return collection;
   }

@@ -1,20 +1,16 @@
 import { Hash } from "viem";
 import { UUID } from "crypto";
-import {
-  SerializedGasFees,
-  SerializedRequest,
-  Status,
-} from "./TypesAndValidation";
+import { GasFees, Status, Request } from "./TypesAndValidation";
 
 export interface RequestRepository {
-  create(request: SerializedRequest): Promise<void>;
+  create(request: Request): Promise<void>;
   update(
     id: UUID,
     update: {
       status?: Status;
       hash?: Hash;
-      fees?: SerializedGasFees;
+      fees?: GasFees;
     }
   ): Promise<void>;
-  find(id: UUID): Promise<SerializedRequest | null>;
+  find(id: UUID): Promise<Request | null>;
 }

@@ -7,8 +7,8 @@ import {
 } from "./TransactionManager";
 import { RequestRepository } from "./RequestRepository";
 import { UUID, randomUUID } from "crypto";
-import { Address, Hex, parseEther } from "viem";
-import { Status, serializeGasFees } from "./TypesAndValidation";
+import { Address, Hex } from "viem";
+import { Status } from "./TypesAndValidation";
 
 export class RequestMediator {
   private transactionManager: TransactionManager; // TODO add many for many different chains
@@ -25,18 +25,13 @@ export class RequestMediator {
     this.requestRepo = requestRepo;
   }
 
-  public async start(
-    to: Address,
-    from: Address,
-    value: `${number}`,
-    data?: Hex
-  ) {
+  public async start(to: Address, from: Address, value: bigint, data?: Hex) {
     const id = randomUUID();
 
     this.setupListeners(id, to, from, value, data);
 
     try {
-      await this.transactionManager.send(id, to, from, parseEther(value), data);
+      await this.transactionManager.send(id, to, from, BigInt(value), data);
       return id;
     } catch (error) {
       this.teardownListeners(id);
@@ -52,7 +47,7 @@ export class RequestMediator {
     id: UUID,
     to: Address,
     from: Address,
-    value: `${number}`,
+    value: bigint,
     data?: Hex
   ) {
     this.transactionManager.once(
@@ -77,6 +72,7 @@ export class RequestMediator {
     );
 
     this.transactionManager.on(`${TransactionEvent.complete}-${id}`, () => {
+      console.log("Tearing down listeners, transaction complete");
       this.teardownListeners(id);
     });
 
@@ -96,7 +92,7 @@ export class RequestMediator {
       id: UUID;
       from: Address;
       to: Address;
-      value: `${number}`;
+      value: bigint;
       data?: Hex;
     }
   ) {
@@ -110,7 +106,7 @@ export class RequestMediator {
         chainId: this.transactionManager.chain.id,
         value: params.value,
         nonce: params.nonce,
-        fees: serializeGasFees(params.fees),
+        fees: params.fees,
         hash: params.hash,
         data: params.data,
       });
@@ -138,7 +134,7 @@ export class RequestMediator {
       );
       await this.requestRepo.update(params.id, {
         hash: params.hash,
-        fees: serializeGasFees(params.fees),
+        fees: params.fees,
       });
       console.info(`Finished updating the database`);
     } catch (e) {
