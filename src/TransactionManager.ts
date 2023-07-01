@@ -66,14 +66,14 @@ export class TransactionManager extends EventEmitter {
   public hashToUUID: Map<Hash, string> = new Map();
 
   private client: PublicClient;
-  private managedWallets: NonceManagedWallet[];
+  private managedWallets: Map<Address, NonceManagedWallet>;
   private blockRetry: number;
   private gasOracle: GasOracle;
 
   constructor(
     chain: Chain,
     client: PublicClient,
-    managedWallets: NonceManagedWallet[],
+    managedWallets: Map<Address, NonceManagedWallet>,
     gasOracle: GasOracle,
     blockRetry: number
   ) {
@@ -101,17 +101,7 @@ export class TransactionManager extends EventEmitter {
       );
     }
 
-    const fromWallet = this.managedWallets.find(
-      (wallet) => from === wallet.address
-    );
-
-    if (fromWallet === undefined) {
-      throw new WalletNotFoundError(
-        from,
-        `wallet ${from} not managed on ${this.chain.name}`
-      );
-    }
-
+    const fromWallet = this.getWallet(from);
     const fees = await this.gasOracle.getCurrent();
     const { hash, nonce } = await fromWallet.send(to, value, fees, data);
 
@@ -129,10 +119,6 @@ export class TransactionManager extends EventEmitter {
 
     const e: TransactionStartEvent = { nonce, hash, fees };
     this.emit(`${TransactionEvent.start}-${id}`, e);
-  }
-
-  public get signers() {
-    return this.managedWallets.map((w) => w.address);
   }
 
   // TODO what happens if there's a re-org...
@@ -226,7 +212,7 @@ export class TransactionManager extends EventEmitter {
   }
 
   private getWallet(address: Address) {
-    const wallet = this.managedWallets.find((w) => w.address === address);
+    const wallet = this.managedWallets.get(address);
 
     if (wallet === undefined) {
       throw new WalletNotFoundError(

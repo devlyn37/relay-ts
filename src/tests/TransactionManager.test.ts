@@ -26,7 +26,7 @@ describe("TransactionManager", () => {
       const transactionManager = new TransactionManager(
         testChain,
         publicClient,
-        [managedWallet],
+        new Map([[managedWallet.address, managedWallet]]),
         new BaseGasOracle(publicClient),
         5
       );
@@ -108,7 +108,7 @@ describe("TransactionManager", () => {
       const transactionManager = new TransactionManager(
         testChain,
         publicClient,
-        [managedWallet],
+        new Map([[managedWallet.address, managedWallet]]),
         new BaseGasOracle(publicClient),
         5
       );
@@ -150,7 +150,7 @@ describe("TransactionManager", () => {
       const transactionManager = new TransactionManager(
         testChain,
         publicClient,
-        [managedWallet],
+        new Map([[managedWallet.address, managedWallet]]),
         new BaseGasOracle(publicClient),
         1
       );
@@ -218,7 +218,10 @@ describe("TransactionManager", () => {
       const transactionManager = new TransactionManager(
         testChain,
         publicClient,
-        [managedWallet1, managedWallet2],
+        new Map([
+          [managedWallet1.address, managedWallet1],
+          [managedWallet2.address, managedWallet2],
+        ]),
         new BaseGasOracle(publicClient),
         1
       );

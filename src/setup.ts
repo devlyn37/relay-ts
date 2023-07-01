@@ -1,6 +1,11 @@
 import { privateKeyToAccount } from "viem/accounts";
 import { NonceManagedWallet } from "./NonceManagedWallet";
-import { PrivateKeyAccount, createPublicClient, webSocket } from "viem";
+import {
+  Address,
+  PrivateKeyAccount,
+  createPublicClient,
+  webSocket,
+} from "viem";
 import { MongoRequestRepository } from "./MongoRequestRepo";
 import { TransactionManager } from "./TransactionManager";
 import { chainIdToViemChain } from "./TypesAndValidation";
@@ -54,9 +59,10 @@ async function buildManager(url: string, accounts: PrivateKeyAccount[]) {
     throw new Error(`chain with id ${chainId} not defined in code`);
   }
 
-  const wallets = accounts.map(
-    (account) => new NonceManagedWallet(account, ws, chain)
+  const walletMap = new Map<Address, NonceManagedWallet>();
+  accounts.forEach((account) =>
+    walletMap.set(account.address, new NonceManagedWallet(account, ws, chain))
   );
   const oracle = new BaseGasOracle(client);
-  return new TransactionManager(chain, client, wallets, oracle, 3);
+  return new TransactionManager(chain, client, walletMap, oracle, 3);
 }
