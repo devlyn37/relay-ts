@@ -10,31 +10,46 @@ import { UUID, randomUUID } from "crypto";
 import { Address, Hex } from "viem";
 import { Status } from "./TypesAndValidation";
 
+export class ChainNotFoundError extends Error {
+  chainId: number;
+
+  constructor(chainId: number) {
+    super(`Chain with id ${chainId} not found`);
+    this.chainId = chainId;
+  }
+}
 export class RequestMediator {
-  private transactionManager: TransactionManager; // TODO add many for many different chains
+  private transactionManagers: Map<number, TransactionManager>; // TODO add many for many different chains
   private requestRepo: RequestRepository;
   // logger
   // tracing
   // etc...
 
   constructor(
-    transactionManager: TransactionManager,
+    transactionManagers: Map<number, TransactionManager>,
     requestRepo: RequestRepository
   ) {
-    this.transactionManager = transactionManager;
+    this.transactionManagers = transactionManagers;
     this.requestRepo = requestRepo;
   }
 
-  public async start(to: Address, from: Address, value: bigint, data?: Hex) {
+  public async start(
+    chainId: number,
+    to: Address,
+    from: Address,
+    value: bigint,
+    data?: Hex
+  ) {
     const id = randomUUID();
 
-    this.setupListeners(id, to, from, value, data);
+    const manager = this.getTransactionManager(chainId);
+    this.setupListeners(manager, id, to, from, value, data);
 
     try {
-      await this.transactionManager.send(id, to, from, BigInt(value), data);
+      await manager.send(id, to, from, value, data);
       return id;
     } catch (error) {
-      this.teardownListeners(id);
+      this.teardownListeners(manager, id);
       throw error;
     }
   }
@@ -44,45 +59,54 @@ export class RequestMediator {
   }
 
   private setupListeners(
+    manager: TransactionManager,
     id: UUID,
     to: Address,
     from: Address,
     value: bigint,
     data?: Hex
   ) {
-    this.transactionManager.once(
+    manager.once(
       `${TransactionEvent.start}-${id}`,
       (e: TransactionStartEvent) => {
-        this.saveStartedTransaction({ ...e, to, from, value, data, id });
+        this.saveStartedTransaction({
+          ...e,
+          chainId: manager.chain.id,
+          to,
+          from,
+          value,
+          data,
+          id,
+        });
       }
     );
 
-    this.transactionManager.on(
+    manager.on(
       `${TransactionEvent.retry}-${id}`,
       (e: TransactionRetryEvent) => {
         this.saveRetriedTransaction({ ...e, id });
       }
     );
 
-    this.transactionManager.on(
+    manager.on(
       `${TransactionEvent.complete}-${id}`,
       (e: TransactionCompleteEvent) => {
         this.saveCompletedTransaction(id);
       }
     );
 
-    this.transactionManager.on(`${TransactionEvent.complete}-${id}`, () => {
+    manager.on(`${TransactionEvent.complete}-${id}`, () => {
       console.log("Tearing down listeners, transaction complete");
-      this.teardownListeners(id);
+      this.teardownListeners(manager, id);
     });
 
     // TODO Transaction Retry Failed
   }
 
-  private teardownListeners(id: UUID) {
-    for (const name of this.transactionManager.eventNames()) {
+  private teardownListeners(manager: TransactionManager, id: UUID) {
+    for (const name of manager.eventNames()) {
       if (name.toString().includes(id)) {
-        this.transactionManager.removeAllListeners(name);
+        manager.removeAllListeners(name);
       }
     }
   }
@@ -90,6 +114,7 @@ export class RequestMediator {
   private async saveStartedTransaction(
     params: TransactionStartEvent & {
       id: UUID;
+      chainId: number;
       from: Address;
       to: Address;
       value: bigint;
@@ -103,7 +128,7 @@ export class RequestMediator {
         status: Status.pending,
         to: params.to,
         from: params.from,
-        chainId: this.transactionManager.chain.id,
+        chainId: params.chainId,
         value: params.value,
         nonce: params.nonce,
         fees: params.fees,
@@ -157,5 +182,15 @@ export class RequestMediator {
       );
       // do something
     }
+  }
+
+  private getTransactionManager(chainId: number) {
+    const manager = this.transactionManagers.get(chainId);
+
+    if (manager === undefined) {
+      throw new ChainNotFoundError(chainId);
+    }
+
+    return manager;
   }
 }

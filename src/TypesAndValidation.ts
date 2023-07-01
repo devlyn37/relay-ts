@@ -1,3 +1,12 @@
+import { Chain } from "viem";
+import {
+  foundry,
+  goerli,
+  mainnet,
+  polygon,
+  polygonMumbai,
+  sepolia,
+} from "viem/chains";
 import { z } from "zod";
 
 export type ObjectValues<T extends object> = T[keyof T];
@@ -11,6 +20,20 @@ export function serializeWithBigInt(val: any) {
     )
   );
 }
+
+// TODO is this built in somewhere
+export const chainIdToViemChain = new Map<number, Chain>([
+  [mainnet.id, mainnet],
+  [polygon.id, polygon],
+  [goerli.id, goerli],
+  [sepolia.id, sepolia],
+  [polygonMumbai.id, polygonMumbai],
+  [foundry.id, foundry],
+]);
+
+export const chainId = z.number().refine((num) => chainIdToViemChain.has(num), {
+  message: `chain not supported`,
+});
 
 export const stringToBigInt = z.string().transform((s, ctx) => {
   try {
@@ -78,6 +101,7 @@ export const request = z.object({
 export type Request = z.infer<typeof request>;
 
 export const createRequestInput = z.object({
+  chainId: chainId,
   to: hexWithPrefix,
   value: stringToBigInt,
   data: hexWithPrefix.optional(),

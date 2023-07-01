@@ -135,16 +135,29 @@ export class TransactionManager extends EventEmitter {
     return this.managedWallets.map((w) => w.address);
   }
 
+  // TODO what happens if there's a re-org...
   private monitorBlocks() {
     this.client.watchBlockNumber({
-      onBlockNumber: async (blockNumber) => {
-        console.log("Block number received at:", new Date());
+      onBlockNumber: async (n) => {
+        console.info(
+          `Block number ${n} received from chain ${
+            this.chain.name
+          } at ${new Date()}`
+        );
 
-        const block = await this.client.getBlock({ blockNumber });
-        console.log("Full block fetched at:", new Date());
+        // TODO race conditions here?
+        if (this.pending.size === 0) {
+          return;
+        }
+
+        const block = await this.client.getBlock({ blockNumber: n });
+        console.info(`Full block fetched at: ${new Date()}`);
 
         try {
           await this.processBlock(block);
+          console.info(
+            `Block fully processed, completed transactions marked, retries sent: ${new Date()}`
+          );
         } catch (e) {
           console.error(
             `There was an error processing the block:\n${JSON.stringify(
@@ -183,11 +196,6 @@ export class TransactionManager extends EventEmitter {
         retries.push(this.retryTransaction(id, txn, oracleEstimate));
       }
     }
-
-    console.log(
-      "Block fully processed, completed transactions marked, retries sent: ",
-      new Date()
-    );
     return Promise.all(retries);
   }
 
