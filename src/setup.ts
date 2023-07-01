@@ -6,7 +6,7 @@ import {
   createPublicClient,
   webSocket,
 } from "viem";
-import { MongoRequestRepository } from "./MongoRequestRepo";
+import { MongoRequestRepository } from "./RequestRepository";
 import { TransactionManager } from "./TransactionManager";
 import { chainIdToViemChain } from "./TypesAndValidation";
 import { BaseGasOracle } from "./gasOracle";

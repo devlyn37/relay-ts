@@ -136,17 +136,17 @@ export class TransactionManager extends EventEmitter {
           return;
         }
 
-        const block = await this.client.getBlock({ blockNumber: n });
-        console.info(`Full block fetched at: ${new Date()}`);
-
         try {
+          const block = await this.client.getBlock({ blockNumber: n });
+          console.info(`Full block fetched at: ${new Date()}`);
+
           await this.processBlock(block);
           console.info(
             `Block fully processed, completed transactions marked, retries sent: ${new Date()}`
           );
         } catch (e) {
           console.error(
-            `There was an error processing the block:\n${JSON.stringify(
+            `There was an error fetching or processing the block:\n${JSON.stringify(
               e,
               undefined,
               2
