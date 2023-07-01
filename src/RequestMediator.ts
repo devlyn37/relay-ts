@@ -19,7 +19,7 @@ export class ChainNotFoundError extends Error {
   }
 }
 export class RequestMediator {
-  private transactionManagers: Map<number, TransactionManager>; // TODO add many for many different chains
+  private transactionManagers: Map<number, TransactionManager>;
   private requestRepo: RequestRepository;
   // logger
   // tracing
@@ -31,6 +31,16 @@ export class RequestMediator {
   ) {
     this.transactionManagers = transactionManagers;
     this.requestRepo = requestRepo;
+
+    // Make sure events emitted from handlers don't stop the node process
+    for (const manager of transactionManagers.values()) {
+      manager.on("error", (error) => {
+        console.error(
+          `An unhandled error occurred on the transaction manager for chain ${manager.chain.name}`,
+          error
+        );
+      });
+    }
   }
 
   public async start(

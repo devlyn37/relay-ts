@@ -58,17 +58,5 @@ async function buildManager(url: string, accounts: PrivateKeyAccount[]) {
     (account) => new NonceManagedWallet(account, ws, chain)
   );
   const oracle = new BaseGasOracle(client);
-  const manager = new TransactionManager(chain, client, wallets, oracle, 3);
-
-  // TODO this shouldn't go here
-  // Make sure events emitted from handler don't stop the node process
-  manager.on("error", (error) => {
-    console.error(
-      `An error occurred on the transaction manager for chain with id ${chainId}`,
-      error
-    );
-    // TODO handle error
-  });
-
-  return manager;
+  return new TransactionManager(chain, client, wallets, oracle, 3);
 }
