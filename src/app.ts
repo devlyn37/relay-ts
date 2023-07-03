@@ -11,7 +11,6 @@ import { setup } from "./setup";
 async function startServer(port: number) {
   const mediator = await setup();
   const app: Application = express();
-
   app.use(express.json());
 
   app.post(
@@ -24,10 +23,6 @@ async function startServer(port: number) {
         const id = await mediator.start(chainId, to, address, value, data);
         return res.status(200).json({ id });
       } catch (error) {
-        if (error instanceof ZodError) {
-          return res.status(400).json(error.format());
-        }
-
         next(error);
       }
     }
@@ -45,18 +40,19 @@ async function startServer(port: number) {
         }
         return res.status(200).json(serializeWithBigInt(request));
       } catch (error) {
-        if (error instanceof ZodError) {
-          return res.status(400).json(error.format());
-        }
-
         next(error);
       }
     }
   );
 
   // Error handling middleware
-  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
-    console.error(err.stack);
+  app.use((error: any, req: Request, res: Response, _next: NextFunction) => {
+    console.error(error.stack);
+
+    if (error instanceof ZodError) {
+      return res.status(400).json(error.format());
+    }
+
     res.status(500).send("Something broke!");
   });
 

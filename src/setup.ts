@@ -43,9 +43,10 @@ export async function setup(): Promise<RequestMediator> {
   }
   console.info(chainLog);
 
-  // assemble
-  const repo = new MongoRequestRepository(process.env.MONGO_DATABASE! as any);
-  return new RequestMediator(managers, repo);
+  return new RequestMediator(
+    managers,
+    new MongoRequestRepository(env.MONGO_DATABASE)
+  );
 }
 
 async function buildManager(url: string, accounts: PrivateKeyAccount[]) {

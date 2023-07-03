@@ -18,12 +18,11 @@ export class ChainNotFoundError extends Error {
     this.chainId = chainId;
   }
 }
+
 export class RequestMediator {
   private transactionManagers: Map<number, TransactionManager>;
   private requestRepo: RequestRepository;
-  // logger
-  // tracing
-  // etc...
+  // logger, tracing, metrics, etc...
 
   constructor(
     transactionManagers: Map<number, TransactionManager>,
@@ -98,14 +97,11 @@ export class RequestMediator {
       }
     );
 
-    manager.on(
-      `${TransactionEvent.complete}-${id}`,
-      (e: TransactionCompleteEvent) => {
-        this.saveCompletedTransaction(id);
-      }
-    );
-
     manager.on(`${TransactionEvent.complete}-${id}`, () => {
+      this.saveCompletedTransaction(id);
+    });
+
+    manager.once(`${TransactionEvent.complete}-${id}`, () => {
       console.log("Tearing down listeners, transaction complete");
       this.teardownListeners(manager, id);
     });
