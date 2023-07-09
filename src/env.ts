@@ -4,6 +4,7 @@ import "dotenv/config";
 const envVariables = z.object({
   KEYS: z.string(),
   RPCS: z.string(),
+  AUTH_HEADER: z.string(),
   MONGO_DATABASE: z.string().url(),
 });
 

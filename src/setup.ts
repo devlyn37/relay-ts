@@ -13,7 +13,7 @@ import { BaseGasOracle } from "./gasOracle";
 import { env } from "./env";
 import { RequestMediator } from "./RequestMediator";
 
-export async function setup(): Promise<RequestMediator> {
+export async function setupMonitoring(): Promise<RequestMediator> {
   console.info(`Loading env...`);
 
   // parse wallets from private keys

@@ -6,12 +6,13 @@ import {
   strictUUID,
 } from "./TypesAndValidation";
 import { ZodError } from "zod";
-import { setup } from "./setup";
+import { env } from "./env";
+import { RequestMediator } from "./RequestMediator";
 
-async function startServer(port: number) {
-  const mediator = await setup();
+export function createServer(mediator: RequestMediator) {
   const app: Application = express();
   app.use(express.json());
+  app.use(auth);
 
   app.post(
     "/key/:address/tx",
@@ -45,33 +46,26 @@ async function startServer(port: number) {
     }
   );
 
-  // Error handling middleware
-  app.use((error: any, req: Request, res: Response, _next: NextFunction) => {
-    console.error(error.stack);
-
-    if (error instanceof ZodError) {
-      return res.status(400).json(error.format());
-    }
-
-    res.status(500).send("Something broke!");
-  });
-
-  app.listen(port, () => {
-    console.log(`Server started on port ${port}`);
-  });
+  app.use(error);
+  return app;
 }
 
-process.on("uncaughtException", (err) => {
-  console.error("There was an uncaught error", err);
-  // process.exit(1); //mandatory (as per the Node.js docs)
-});
+function auth(req: Request, res: Response, next: NextFunction) {
+  const { authorization } = req.headers;
 
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
-  // process.exit(1); //mandatory (as per the Node.js docs)
-});
+  if (!authorization || authorization !== env.AUTH_HEADER) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
 
-startServer(3001).catch((error) => {
-  console.error("Failed to start server:", error);
-  process.exit(1);
-});
+  next();
+}
+
+function error(error: any, req: Request, res: Response, _next: NextFunction) {
+  console.error(error);
+
+  if (error instanceof ZodError) {
+    return res.status(400).json(error.format());
+  }
+
+  return res.status(500).send("Something broke!");
+}
