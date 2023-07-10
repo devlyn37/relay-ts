@@ -7,7 +7,7 @@ import {
   testChain,
   testClient,
 } from "./utils.js";
-import { formatEther, parseEther, parseGwei, webSocket } from "viem";
+import { parseEther, parseGwei, webSocket } from "viem";
 import { test, describe, expect } from "vitest";
 import { TransactionManager } from "../TransactionManager.js";
 import { BaseGasOracle } from "../gasOracle.js";
@@ -28,7 +28,8 @@ describe("TransactionManager", () => {
         publicClient,
         new Map([[managedWallet.address, managedWallet]]),
         new BaseGasOracle(publicClient),
-        5
+        5,
+        25
       );
 
       await testClient.setBalance({
@@ -110,7 +111,8 @@ describe("TransactionManager", () => {
         publicClient,
         new Map([[managedWallet.address, managedWallet]]),
         new BaseGasOracle(publicClient),
-        5
+        5,
+        25
       );
 
       await testClient.setBalance({
@@ -135,6 +137,7 @@ describe("TransactionManager", () => {
 
       // Check that the transaction is still pending
       expect(transactionManager.pending.has(transactionId)).toBe(true);
+      expect(transactionManager.pending.size).toBe(1);
     },
     { timeout: 30000 }
   );
@@ -152,7 +155,8 @@ describe("TransactionManager", () => {
         publicClient,
         new Map([[managedWallet.address, managedWallet]]),
         new BaseGasOracle(publicClient),
-        1
+        1,
+        25
       );
 
       await testClient.setBalance({
@@ -160,7 +164,7 @@ describe("TransactionManager", () => {
         value: parseEther("1"),
       });
 
-      // send a transaction to monitor
+      // send transaction to monitor
       const transactionId = randomUUID();
       await transactionManager.send(
         transactionId,
@@ -174,6 +178,8 @@ describe("TransactionManager", () => {
       await testClient.setNextBlockBaseFeePerGas({
         baseFeePerGas: parseGwei("1000"),
       });
+      await sleep(500);
+
       await testClient.mine({ blocks: 1 });
       await sleep(500);
 
@@ -223,7 +229,8 @@ describe("TransactionManager", () => {
           [managedWallet2.address, managedWallet2],
         ]),
         new BaseGasOracle(publicClient),
-        1
+        1,
+        25
       );
 
       await testClient.setBalance({

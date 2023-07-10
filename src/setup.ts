@@ -65,5 +65,5 @@ async function buildManager(url: string, accounts: PrivateKeyAccount[]) {
     walletMap.set(account.address, new NonceManagedWallet(account, ws, chain))
   );
   const oracle = new BaseGasOracle(client);
-  return new TransactionManager(chain, client, walletMap, oracle, 3);
+  return new TransactionManager(chain, client, walletMap, oracle, 3, 10);
 }

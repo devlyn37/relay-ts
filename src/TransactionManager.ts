@@ -20,27 +20,21 @@ export const TransactionEvent = {
   retry: "transactionRetried",
   failRetry: "transactionRetryFailed",
   complete: "transactionCompleted",
-  fail: "transactionFailed",
+  cancel: "transactionCancelled",
+  failCancel: "transactionCancelFailed",
 } as const;
 export type TransactionEvent = ObjectValues<typeof TransactionEvent>;
 export const TransactionEvents = objectValues(TransactionEvent);
-
-export type TransactionStartEvent = {
-  nonce: number;
-  hash: Hash;
-  fees: GasFees;
-};
-
-export type TransactionCompleteEvent = {
-  nonce: number;
-  hash: Hash;
-  fees: GasFees;
-};
 
 export type TransactionRetryEvent = {
   hash: Hash;
   fees: GasFees;
 };
+export type TransactionStartEvent = TransactionRetryEvent & {
+  nonce: number;
+};
+export type TransactionCancelEvent = TransactionRetryEvent;
+export type TransactionCompleteEvent = TransactionStartEvent;
 
 export class DuplicateIdError extends Error {
   public id: string;
@@ -68,6 +62,7 @@ export class TransactionManager extends EventEmitter {
   private client: PublicClient;
   private managedWallets: Map<Address, NonceManagedWallet>;
   private blockRetry: number;
+  private blockCancel: number;
   private gasOracle: GasOracle;
 
   constructor(
@@ -75,7 +70,8 @@ export class TransactionManager extends EventEmitter {
     client: PublicClient,
     managedWallets: Map<Address, NonceManagedWallet>,
     gasOracle: GasOracle,
-    blockRetry: number
+    blockRetry: number,
+    blockCancel: number
   ) {
     super({ captureRejections: true });
     this.chain = chain;
@@ -83,6 +79,7 @@ export class TransactionManager extends EventEmitter {
     this.managedWallets = managedWallets;
     this.blockRetry = blockRetry;
     this.gasOracle = gasOracle;
+    this.blockCancel = blockCancel;
 
     this.monitorBlocks();
   }
@@ -121,7 +118,7 @@ export class TransactionManager extends EventEmitter {
     this.emit(`${TransactionEvent.start}-${id}`, e);
   }
 
-  // TODO what happens if there's a re-org...
+  // Note: this doesn't account for re-orgs
   private monitorBlocks() {
     this.client.watchBlockNumber({
       onBlockNumber: async (n) => {
@@ -170,18 +167,26 @@ export class TransactionManager extends EventEmitter {
       }
     }
 
-    const pending = [...this.pending.entries()];
     const retries = [];
+    let oracleEstimate: GasFees | undefined = undefined;
 
-    for (const [id, txn] of pending) {
+    for (const [id, txn] of this.pending.entries()) {
       txn.blocksSpentWaiting++;
-      let oracleEstimate: GasFees | undefined = undefined;
 
-      if (txn.blocksSpentWaiting >= this.blockRetry) {
+      const shouldCancel = txn.blocksSpentWaiting >= this.blockCancel;
+      const shouldRetry =
+        txn.blocksSpentWaiting >= this.blockRetry &&
+        txn.blocksSpentWaiting % this.blockRetry === 0;
+
+      if (shouldCancel) {
         oracleEstimate = oracleEstimate ?? (await this.gasOracle.getCurrent()); // Let's only fetch this once
+        retries.push(this.cancelTransaction(id, txn, oracleEstimate));
+      } else if (shouldRetry) {
+        oracleEstimate = oracleEstimate ?? (await this.gasOracle.getCurrent());
         retries.push(this.retryTransaction(id, txn, oracleEstimate));
       }
     }
+
     return Promise.all(retries);
   }
 
@@ -193,6 +198,8 @@ export class TransactionManager extends EventEmitter {
     try {
       const retryFees = this.gasOracle.getRetry(txn.fees, oracleEstimate);
       const fromWallet = this.getWallet(txn.from);
+
+      // TODO when this fails because the transaction is already sent, mark tx as complete
       const hash = await fromWallet.replace({
         ...txn,
         fees: retryFees,
@@ -208,6 +215,35 @@ export class TransactionManager extends EventEmitter {
       this.emit(`${TransactionEvent.retry}-${id}`, e);
     } catch (error) {
       this.emit(`${TransactionEvent.failRetry}-${id}`, error);
+    }
+  }
+
+  private async cancelTransaction(
+    id: string,
+    txn: TransactionData,
+    oracleEstimate: GasFees
+  ) {
+    try {
+      const retryFees = this.gasOracle.getRetry(txn.fees, oracleEstimate);
+      const fromWallet = this.getWallet(txn.from);
+
+      // TODO when this fails because the transaction is already sent, mark tx as complete
+      const hash = await fromWallet.replace({
+        nonce: txn.nonce,
+        to: "0xe898bbd704cce799e9593a9ade2c1ca0351ab660",
+        value: 0n,
+        fees: retryFees,
+        previousHash: txn.hash,
+      });
+
+      this.hashToUUID.delete(txn.hash);
+      this.hashToUUID.set(hash, id);
+      txn.hash = hash;
+      txn.fees = retryFees;
+      const event: TransactionRetryEvent = { hash, fees: txn.fees };
+      this.emit(`${TransactionEvent.cancel}-${id}`, event);
+    } catch (error) {
+      this.emit(`${TransactionEvent.failCancel}-${id}`, error);
     }
   }
 
