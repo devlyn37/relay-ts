@@ -44,11 +44,6 @@ export const publicClient = createPublicClient({
   transport: webSocket(),
 });
 
-export const walletClient = createWalletClient({
-  chain: testChain,
-  transport: webSocket(),
-});
-
 export async function getPendingTxnsForAddress(address: Address) {
   const content = await testClient.getTxpoolContent();
   const pending = content.pending[address.toLowerCase() as `0x${string}`];
