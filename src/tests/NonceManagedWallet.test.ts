@@ -135,7 +135,7 @@ describe("Nonce Managed Wallet", () => {
     const txn = await publicClient.getTransaction({ hash });
     await testClient.mine({ blocks: 1 });
 
-    await expect(
+    await expect(() =>
       nonceManagedWallet.replace({
         to: txn.to!,
         value: txn.value,

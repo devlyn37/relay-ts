@@ -23,14 +23,14 @@ describe("TransactionManager", () => {
         webSocket(),
         testChain
       );
-      const transactionManager = new TransactionManager(
-        testChain,
-        publicClient,
-        new Map([[managedWallet.address, managedWallet]]),
-        new BaseGasOracle(publicClient),
-        5,
-        25
-      );
+      const transactionManager = new TransactionManager({
+        chain: testChain,
+        client: publicClient,
+        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        gasOracle: new BaseGasOracle(publicClient),
+        blockRetry: 5,
+        blockCancel: 25,
+      });
 
       await testClient.setBalance({
         address: managedWallet.address,
@@ -106,14 +106,14 @@ describe("TransactionManager", () => {
         webSocket(),
         testChain
       );
-      const transactionManager = new TransactionManager(
-        testChain,
-        publicClient,
-        new Map([[managedWallet.address, managedWallet]]),
-        new BaseGasOracle(publicClient),
-        5,
-        25
-      );
+      const transactionManager = new TransactionManager({
+        chain: testChain,
+        client: publicClient,
+        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        gasOracle: new BaseGasOracle(publicClient),
+        blockRetry: 5,
+        blockCancel: 25,
+      });
 
       await testClient.setBalance({
         address: managedWallet.address,
@@ -150,14 +150,14 @@ describe("TransactionManager", () => {
         webSocket(),
         testChain
       );
-      const transactionManager = new TransactionManager(
-        testChain,
-        publicClient,
-        new Map([[managedWallet.address, managedWallet]]),
-        new BaseGasOracle(publicClient),
-        1,
-        25
-      );
+      const transactionManager = new TransactionManager({
+        chain: testChain,
+        client: publicClient,
+        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        gasOracle: new BaseGasOracle(publicClient),
+        blockRetry: 1,
+        blockCancel: 25,
+      });
 
       await testClient.setBalance({
         address: managedWallet.address,
@@ -221,17 +221,17 @@ describe("TransactionManager", () => {
         webSocket(),
         testChain
       );
-      const transactionManager = new TransactionManager(
-        testChain,
-        publicClient,
-        new Map([
+      const transactionManager = new TransactionManager({
+        chain: testChain,
+        client: publicClient,
+        managedWallets: new Map([
           [managedWallet1.address, managedWallet1],
           [managedWallet2.address, managedWallet2],
         ]),
-        new BaseGasOracle(publicClient),
-        1,
-        25
-      );
+        gasOracle: new BaseGasOracle(publicClient),
+        blockRetry: 5,
+        blockCancel: 25,
+      });
 
       await testClient.setBalance({
         address: managedWallet1.address,

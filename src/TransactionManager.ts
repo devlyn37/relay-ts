@@ -7,16 +7,7 @@ import { GasOracle } from "./gasOracle";
 import EventEmitter from "events";
 import { GasFees, ObjectValues, objectValues } from "./TypesAndValidation";
 
-type TransactionData = {
-  to: Address;
-  from: Address;
-  value: bigint;
-  nonce: number;
-  blocksSpentWaiting: number;
-  fees: GasFees;
-  hash: Hash;
-  data?: Hex;
-};
+// Event Types
 
 export const TransactionEvent = {
   submitted: "transactionSubmitted",
@@ -39,6 +30,7 @@ export type TransactionStartEvent = TransactionRetryEvent & {
 export type TransactionCancelEvent = TransactionRetryEvent;
 export type TransactionIncludedEvent = TransactionStartEvent;
 
+// Custom Errors
 export class DuplicateIdError extends Error {
   public id: string;
 
@@ -57,6 +49,28 @@ export class WalletNotFoundError extends Error {
   }
 }
 
+// Standard Types
+
+type TransactionData = {
+  to: Address;
+  from: Address;
+  value: bigint;
+  nonce: number;
+  blocksSpentWaiting: number;
+  fees: GasFees;
+  hash: Hash;
+  data?: Hex;
+};
+
+type TransactionManagerConfig = {
+  chain: Chain;
+  client: PublicClient;
+  managedWallets: Map<Address, NonceManagedWallet>;
+  gasOracle: GasOracle;
+  blockRetry: number;
+  blockCancel: number;
+};
+
 export class TransactionManager extends EventEmitter {
   public chain: Chain;
   public pending: Map<string, TransactionData> = new Map();
@@ -68,21 +82,14 @@ export class TransactionManager extends EventEmitter {
   private blockCancel: number;
   private gasOracle: GasOracle;
 
-  constructor(
-    chain: Chain,
-    client: PublicClient,
-    managedWallets: Map<Address, NonceManagedWallet>,
-    gasOracle: GasOracle,
-    blockRetry: number,
-    blockCancel: number
-  ) {
+  constructor(config: TransactionManagerConfig) {
     super({ captureRejections: true });
-    this.chain = chain;
-    this.client = client;
-    this.managedWallets = managedWallets;
-    this.blockRetry = blockRetry;
-    this.gasOracle = gasOracle;
-    this.blockCancel = blockCancel;
+    this.chain = config.chain;
+    this.client = config.client;
+    this.managedWallets = config.managedWallets;
+    this.blockRetry = config.blockRetry;
+    this.gasOracle = config.gasOracle;
+    this.blockCancel = config.blockCancel;
 
     this.monitorBlocks();
   }
