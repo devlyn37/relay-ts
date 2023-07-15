@@ -1,5 +1,5 @@
 import {
-  TransactionCompleteEvent,
+  TransactionIncludedEvent,
   TransactionEvent,
   TransactionManager,
   TransactionRetryEvent,
@@ -7,7 +7,7 @@ import {
 } from "./TransactionManager";
 import { RequestRepository } from "./RequestRepository";
 import { UUID, randomUUID } from "crypto";
-import { Address, Hex } from "viem";
+import { Address, Hex, PublicClient } from "viem";
 import { Status } from "./TypesAndValidation";
 
 export class ChainNotFoundError extends Error {
@@ -22,14 +22,17 @@ export class ChainNotFoundError extends Error {
 export class RequestMediator {
   private transactionManagers: Map<number, TransactionManager>;
   private requestRepo: RequestRepository;
+  private client: PublicClient;
   // logger, tracing, metrics, etc...
 
   constructor(
     transactionManagers: Map<number, TransactionManager>,
-    requestRepo: RequestRepository
+    requestRepo: RequestRepository,
+    client: PublicClient
   ) {
     this.transactionManagers = transactionManagers;
     this.requestRepo = requestRepo;
+    this.client = client;
 
     // Make sure events emitted from handlers don't stop the node process
     for (const manager of transactionManagers.values()) {
@@ -76,7 +79,7 @@ export class RequestMediator {
     data?: Hex
   ) {
     manager.once(
-      `${TransactionEvent.start}-${id}`,
+      `${TransactionEvent.submitted}-${id}`,
       (e: TransactionStartEvent) => {
         this.saveStartedTransaction({
           ...e,
@@ -97,11 +100,14 @@ export class RequestMediator {
       }
     );
 
-    manager.on(`${TransactionEvent.complete}-${id}`, () => {
-      this.saveCompletedTransaction(id);
-    });
+    manager.on(
+      `${TransactionEvent.included}-${id}`,
+      (e: TransactionIncludedEvent) => {
+        this.saveCompletedTransaction({ ...e, id });
+      }
+    );
 
-    manager.once(`${TransactionEvent.complete}-${id}`, () => {
+    manager.once(`${TransactionEvent.included}-${id}`, () => {
       console.log("Tearing down listeners, transaction complete");
       this.teardownListeners(manager, id);
     });
@@ -175,11 +181,22 @@ export class RequestMediator {
       // do something
     }
   }
-  private async saveCompletedTransaction(id: UUID) {
+  private async saveCompletedTransaction(
+    params: TransactionIncludedEvent & {
+      id: UUID;
+    }
+  ) {
     try {
-      console.info(`transaction ${id} complete`);
-      await this.requestRepo.update(id, {
-        status: Status.complete,
+      console.info(`transaction ${params.id} complete`);
+
+      const receipt = await this.client.getTransactionReceipt({
+        hash: params.hash,
+      });
+      const status =
+        receipt.status === "success" ? Status.complete : Status.failed;
+
+      await this.requestRepo.update(params.id, {
+        status,
       });
       console.info(`done saving`);
     } catch (e) {

@@ -1,5 +1,8 @@
 import { Chain, Hash, PublicClient, Block, Address, Hex } from "viem";
-import { NonceManagedWallet } from "./NonceManagedWallet";
+import {
+  NonceAlreadyIncludedError,
+  NonceManagedWallet,
+} from "./NonceManagedWallet";
 import { GasOracle } from "./gasOracle";
 import EventEmitter from "events";
 import { GasFees, ObjectValues, objectValues } from "./TypesAndValidation";
@@ -16,10 +19,10 @@ type TransactionData = {
 };
 
 export const TransactionEvent = {
-  start: "transactionStarted",
+  submitted: "transactionSubmitted",
   retry: "transactionRetried",
   failRetry: "transactionRetryFailed",
-  complete: "transactionCompleted",
+  included: "transactionIncluded",
   cancel: "transactionCancelled",
   failCancel: "transactionCancelFailed",
 } as const;
@@ -34,7 +37,7 @@ export type TransactionStartEvent = TransactionRetryEvent & {
   nonce: number;
 };
 export type TransactionCancelEvent = TransactionRetryEvent;
-export type TransactionCompleteEvent = TransactionStartEvent;
+export type TransactionIncludedEvent = TransactionStartEvent;
 
 export class DuplicateIdError extends Error {
   public id: string;
@@ -115,7 +118,7 @@ export class TransactionManager extends EventEmitter {
     });
 
     const e: TransactionStartEvent = { nonce, hash, fees };
-    this.emit(`${TransactionEvent.start}-${id}`, e);
+    this.emit(`${TransactionEvent.submitted}-${id}`, e);
   }
 
   // Note: this doesn't account for re-orgs
@@ -160,10 +163,9 @@ export class TransactionManager extends EventEmitter {
       const id = this.hashToUUID.get(hash);
 
       if (id !== undefined) {
-        console.log(`transaction ${hash} has been mined`);
         this.hashToUUID.delete(hash);
         this.pending.delete(id);
-        this.emit(`${TransactionEvent.complete}-${id}`);
+        this.emit(`${TransactionEvent.included}-${id}`);
       }
     }
 
@@ -199,22 +201,35 @@ export class TransactionManager extends EventEmitter {
       const retryFees = this.gasOracle.getRetry(txn.fees, oracleEstimate);
       const fromWallet = this.getWallet(txn.from);
 
-      // TODO when this fails because the transaction is already sent, mark tx as complete
-      const hash = await fromWallet.replace({
-        ...txn,
-        fees: retryFees,
-        previousHash: txn.hash,
-      });
+      let hash: Hash;
+
+      try {
+        hash = await fromWallet.replace({
+          ...txn,
+          fees: retryFees,
+        });
+      } catch (e) {
+        if (e instanceof NonceAlreadyIncludedError) {
+          this.hashToUUID.delete(txn.hash);
+          this.pending.delete(id);
+          return this.emit(`${TransactionEvent.included}-${id}`);
+        }
+
+        throw e;
+      }
 
       this.hashToUUID.delete(txn.hash);
       this.hashToUUID.set(hash, id);
+
+      // TODO this is dirty, remember when you wrote this in rust XD, fix this
       txn.hash = hash;
       txn.blocksSpentWaiting = 0;
       txn.fees = retryFees;
+
       const e: TransactionRetryEvent = { hash, fees: txn.fees };
-      this.emit(`${TransactionEvent.retry}-${id}`, e);
+      return this.emit(`${TransactionEvent.retry}-${id}`, e);
     } catch (error) {
-      this.emit(`${TransactionEvent.failRetry}-${id}`, error);
+      return this.emit(`${TransactionEvent.failRetry}-${id}`, error);
     }
   }
 
@@ -227,23 +242,37 @@ export class TransactionManager extends EventEmitter {
       const retryFees = this.gasOracle.getRetry(txn.fees, oracleEstimate);
       const fromWallet = this.getWallet(txn.from);
 
-      // TODO when this fails because the transaction is already sent, mark tx as complete
-      const hash = await fromWallet.replace({
-        nonce: txn.nonce,
-        to: "0xe898bbd704cce799e9593a9ade2c1ca0351ab660",
-        value: 0n,
-        fees: retryFees,
-        previousHash: txn.hash,
-      });
+      let hash: Hash;
+      try {
+        hash = hash = await fromWallet.replace({
+          nonce: txn.nonce,
+          to: "0xe898bbd704cce799e9593a9ade2c1ca0351ab660",
+          value: 0n,
+          fees: retryFees,
+        });
+      } catch (e) {
+        if (e instanceof NonceAlreadyIncludedError) {
+          this.hashToUUID.delete(txn.hash);
+          this.pending.delete(id);
+          return this.emit(`${TransactionEvent.included}-${id}`);
+        }
 
+        throw e;
+      }
+
+      // At this point we no longer track the transaction
       this.hashToUUID.delete(txn.hash);
-      this.hashToUUID.set(hash, id);
-      txn.hash = hash;
-      txn.fees = retryFees;
-      const event: TransactionRetryEvent = { hash, fees: txn.fees };
-      this.emit(`${TransactionEvent.cancel}-${id}`, event);
+      this.pending.delete(id);
+
+      // If the cancellation transaction fails or times out, intervention will be needed.
+      // That's beyond the scope of this class and can be handled by subscribers to the
+      // cancellation failure event.
+      await this.client.waitForTransactionReceipt({ hash });
+
+      const event: TransactionCancelEvent = { hash, fees: txn.fees };
+      return this.emit(`${TransactionEvent.cancel}-${id}`, event);
     } catch (error) {
-      this.emit(`${TransactionEvent.failCancel}-${id}`, error);
+      return this.emit(`${TransactionEvent.failCancel}-${id}`, error);
     }
   }
 
