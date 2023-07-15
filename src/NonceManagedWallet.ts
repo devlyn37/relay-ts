@@ -40,7 +40,7 @@ export class NonceAlreadyIncludedError extends Error {
   address: Address;
 
   constructor(nonce: number, address: Address) {
-    super(`nonce ${nonce} has already been included`);
+    super(`nonce ${nonce} from address ${address} has already been included`);
     this.nonce = nonce;
     this.address = address;
   }

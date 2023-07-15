@@ -1,5 +1,8 @@
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
-import { NonceManagedWallet } from "../NonceManagedWallet.js";
+import {
+  NonceAlreadyIncludedError,
+  NonceManagedWallet,
+} from "../NonceManagedWallet.js";
 import { ALICE } from "./constants.js";
 import {
   publicClient,
@@ -97,7 +100,6 @@ describe("Nonce Managed Wallet", () => {
         maxFeePerGas: txn.maxFeePerGas! * 2n,
         maxPriorityFeePerGas: txn.maxPriorityFeePerGas! * 2n,
       },
-      previousHash: hash,
     });
 
     expect(retryHash).to.not.eq(hash);
@@ -117,7 +119,7 @@ describe("Nonce Managed Wallet", () => {
     expect(confirmations > 0n);
   });
 
-  test("If the previous transaction was mined, retrying will return the mined hash", async () => {
+  test("If the previous transaction was mined, retrying will throw a special error", async () => {
     const nonceManagedWallet = new NonceManagedWallet(
       privateKeyToAccount(generatePrivateKey()),
       webSocket(),
@@ -133,17 +135,18 @@ describe("Nonce Managed Wallet", () => {
     const txn = await publicClient.getTransaction({ hash });
     await testClient.mine({ blocks: 1 });
 
-    const retryHash = await nonceManagedWallet.replace({
-      to: txn.to!,
-      value: txn.value,
-      nonce: txn.nonce,
-      fees: {
-        maxFeePerGas: txn.maxFeePerGas! * 2n,
-        maxPriorityFeePerGas: txn.maxPriorityFeePerGas! * 2n,
-      },
-      previousHash: hash,
-    });
-
-    expect(retryHash).to.eq(hash);
+    await expect(
+      nonceManagedWallet.replace({
+        to: txn.to!,
+        value: txn.value,
+        nonce: txn.nonce,
+        fees: {
+          maxFeePerGas: txn.maxFeePerGas! * 2n,
+          maxPriorityFeePerGas: txn.maxPriorityFeePerGas! * 2n,
+        },
+      })
+    ).rejects.toThrowError(
+      new NonceAlreadyIncludedError(txn.nonce, nonceManagedWallet.address)
+    );
   });
 });
