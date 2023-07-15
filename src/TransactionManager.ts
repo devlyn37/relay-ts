@@ -16,6 +16,7 @@ export const TransactionEvent = {
   included: "transactionIncluded",
   cancel: "transactionCancelled",
   failCancel: "transactionCancelFailed",
+  processingBlockFailed: "processingBlockFailed",
 } as const;
 export type TransactionEvent = ObjectValues<typeof TransactionEvent>;
 export const TransactionEvents = objectValues(TransactionEvent);
@@ -138,11 +139,6 @@ export class TransactionManager extends EventEmitter {
           } at ${new Date()}`
         );
 
-        // TODO race conditions here?
-        if (this.pending.size === 0) {
-          return;
-        }
-
         try {
           const block = await this.client.getBlock({ blockNumber: n });
           console.info(`Full block fetched at: ${new Date()}`);
@@ -152,13 +148,9 @@ export class TransactionManager extends EventEmitter {
             `Block fully processed, completed transactions marked, retries sent: ${new Date()}`
           );
         } catch (e) {
-          console.error(
-            `There was an error fetching or processing the block:\n${JSON.stringify(
-              e,
-              undefined,
-              2
-            )}`
-          );
+          // This means there's been an unexpected error, which will require intervention
+          // an event subscriber should decide how to handler this.
+          this.emit(TransactionEvent.processingBlockFailed);
         }
       },
     });
