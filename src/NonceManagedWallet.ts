@@ -19,16 +19,30 @@ type ReplacementParams = {
   value: bigint;
   nonce: number;
   fees: GasFees;
-  previousHash: Hash;
   data?: Hex;
 };
 
 export class NonceRetryLimitError extends Error {
   firstNonce: number;
+  address: Address;
 
-  constructor(nonce: number, msg: string) {
-    super(msg);
-    this.firstNonce = nonce;
+  constructor(firstNonce: number, address: Address) {
+    super(
+      `Tried resetting nonce ${firstNonce} too many times, someone is using the account ${address} externally`
+    );
+    this.firstNonce = firstNonce;
+    this.address = address;
+  }
+}
+
+export class NonceAlreadyIncludedError extends Error {
+  nonce: number;
+  address: Address;
+
+  constructor(nonce: number, address: Address) {
+    super(`nonce ${nonce} has already been included`);
+    this.nonce = nonce;
+    this.address = address;
   }
 }
 
@@ -116,10 +130,7 @@ export class NonceManagedWallet {
       }
     }
 
-    throw new NonceRetryLimitError(
-      originalNonce,
-      `Tried resetting nonce too many times, someone is using the account ${this.address} externally`
-    );
+    throw new NonceRetryLimitError(originalNonce, this.address);
   }
 
   private async replaceTransaction({
@@ -127,7 +138,6 @@ export class NonceManagedWallet {
     value,
     nonce,
     fees,
-    previousHash,
     data,
   }: ReplacementParams) {
     try {
@@ -142,7 +152,7 @@ export class NonceManagedWallet {
       });
     } catch (e: any) {
       if (e.details === "nonce too low") {
-        return previousHash;
+        throw new NonceAlreadyIncludedError(nonce, this.address);
       }
 
       throw e;
