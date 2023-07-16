@@ -7,7 +7,7 @@ import {
 } from "./TransactionManager";
 import { RequestRepository } from "./RequestRepository";
 import { UUID, randomUUID } from "crypto";
-import { Address, Hex, PublicClient } from "viem";
+import { Address, Hex } from "viem";
 import { Status } from "./TypesAndValidation";
 
 export class ChainNotFoundError extends Error {
@@ -110,7 +110,10 @@ export class RequestMediator {
       this.teardownListeners(manager, id);
     });
 
-    // TODO Transaction Retry Failed
+    // TODO:
+    // Transaction Retry Failed
+    // Transaction Cancelled
+    // Transaction Cancellation Failed
   }
 
   private teardownListeners(manager: TransactionManager, id: UUID) {

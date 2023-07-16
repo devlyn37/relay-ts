@@ -208,6 +208,166 @@ describe("TransactionManager", () => {
     },
     { timeout: 30000 }
   );
+
+  test(
+    "Will retry multiple times",
+    async () => {
+      const managedWallet = new NonceManagedWallet(
+        privateKeyToAccount(generatePrivateKey()),
+        webSocket(),
+        testChain
+      );
+
+      const transactionManager = new TransactionManager({
+        chain: testChain,
+        client: publicClient,
+        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        gasOracle: new BaseGasOracle(publicClient),
+        blockRetry: 3,
+        blockCancel: 25,
+      });
+
+      await testClient.setBalance({
+        address: managedWallet.address,
+        value: parseEther("1"),
+      });
+
+      // send transaction to monitor
+      const transactionId = randomUUID();
+      await transactionManager.send(
+        transactionId,
+        ALICE,
+        managedWallet.address,
+        parseEther("0.1")
+      );
+
+      for (let i = 0; i < 9; i++) {
+        const managerTracked = transactionManager.pending.get(transactionId);
+        expect(managerTracked).to.not.be.undefined;
+
+        const initialHash = transactionManager.pending.get(transactionId)!.hash;
+        await testClient.dropTransaction({ hash: initialHash });
+
+        // mine enough blocks so the transaction manager re-submits
+        await testClient.mine({ blocks: 3 });
+        await sleep(500);
+
+        // Check blockchain state
+        const pendingAfterRetry = await getPendingTxnsForAddress(
+          managedWallet.address
+        );
+        expect(pendingAfterRetry.length).to.eq(1);
+        const hashAfterRetry = pendingAfterRetry[0].hash;
+        expect(hashAfterRetry).to.not.eq(initialHash);
+
+        // Check transaction manager state
+        expect(
+          transactionManager.pending.get(transactionId)?.blocksSpentWaiting
+        ).toBe(0);
+      }
+
+      // Finally, the transaction should be mined
+      await testClient.mine({ blocks: 1 });
+      await sleep(500);
+      expect(transactionManager.pending.has(transactionId)).toBe(false);
+      const pendingFinal = await getPendingTxnsForAddress(
+        managedWallet.address
+      );
+      expect(pendingFinal.length).to.eq(0);
+    },
+    { timeout: 30000 }
+  );
+
+  test(
+    "Will cancel a transaction after enough time",
+    async () => {
+      const managedWallet = new NonceManagedWallet(
+        privateKeyToAccount(generatePrivateKey()),
+        webSocket(),
+        testChain
+      );
+
+      // Also testing here that cancellation will take precedence over retrying
+      const transactionManager = new TransactionManager({
+        chain: testChain,
+        client: publicClient,
+        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        gasOracle: new BaseGasOracle(publicClient),
+        blockRetry: 5,
+        blockCancel: 5,
+      });
+
+      await testClient.setBalance({
+        address: managedWallet.address,
+        value: parseEther("1"),
+      });
+
+      // send a transaction to monitor
+      const transactionId = randomUUID();
+      await transactionManager.send(
+        transactionId,
+        ALICE,
+        managedWallet.address,
+        parseEther("0.1")
+      );
+
+      // drop the transaction from the mempool so it doesn't get mined
+      const hash = transactionManager.pending.get(transactionId)!.hash;
+      const pendingBeforeRetry = await getPendingTxnsForAddress(
+        managedWallet.address
+      );
+      expect(pendingBeforeRetry.length).to.eq(1);
+      const hashBeforeRetry = pendingBeforeRetry[0].hash;
+
+      // Drop the transaction and mine enough blocks so that the next block that is mined will trigger a retry
+      await testClient.dropTransaction({ hash });
+      await testClient.mine({ blocks: 4 });
+      await sleep(1000);
+
+      // Check that despite being dropped from the mempool, the transaction manager is keeping track of the transaction we sent
+      const pendingAfterDropping = await getPendingTxnsForAddress(
+        managedWallet.address
+      );
+      expect(pendingAfterDropping.length).to.eq(0);
+
+      // Check that the transaction is still pending
+      expect(transactionManager.pending.has(transactionId)).toBe(true);
+      console.log("Transactions before retry");
+      console.log(transactionManager.pending);
+
+      // Mine another block, triggering the cancellation
+      await testClient.mine({ blocks: 1 });
+      await sleep(500);
+
+      // Check that a new transaction has replaced the former, with a different hash
+      const pendingAfterCancellation = await getPendingTxnsForAddress(
+        managedWallet.address
+      );
+      expect(pendingAfterCancellation.length).to.eq(1);
+      const hashAfterRetry = pendingAfterCancellation[0].hash;
+
+      // Check that the transaction is a cancellation transaction
+      expect(pendingAfterCancellation[0].value).to.eq("0x0");
+      expect(pendingAfterCancellation[0].to).to.eq(
+        "0xe898bbd704cce799e9593a9ade2c1ca0351ab660"
+      );
+
+      expect(hashAfterRetry).to.not.eq(hashBeforeRetry);
+
+      // The transaction manager shouldn't be tracking it anymore
+      expect(transactionManager.pending.get(transactionId)).to.be.undefined;
+
+      // Finally, the cancellation transaction should have been mined
+      await testClient.mine({ blocks: 1 });
+      await sleep(500);
+      const pendingFinal = await getPendingTxnsForAddress(
+        managedWallet.address
+      );
+      expect(pendingFinal.length).to.eq(0);
+    },
+    { timeout: 30000 }
+  );
+
   test(
     "Can manage more than a single wallet",
     async () => {
@@ -281,4 +441,9 @@ describe("TransactionManager", () => {
     },
     { timeout: 30000 }
   );
+
+  // TODO
+  // Retry when the transaction has already been mined
+  // Cancel when the transaction has already been mined
+  // Start testing events emitted
 });
