@@ -22,17 +22,15 @@ export class ChainNotFoundError extends Error {
 export class RequestMediator {
   private transactionManagers: Map<number, TransactionManager>;
   private requestRepo: RequestRepository;
-  private client: PublicClient;
+
   // logger, tracing, metrics, etc...
 
   constructor(
     transactionManagers: Map<number, TransactionManager>,
-    requestRepo: RequestRepository,
-    client: PublicClient
+    requestRepo: RequestRepository
   ) {
     this.transactionManagers = transactionManagers;
     this.requestRepo = requestRepo;
-    this.client = client;
 
     // Make sure events emitted from handlers don't stop the node process
     for (const manager of transactionManagers.values()) {
@@ -103,7 +101,7 @@ export class RequestMediator {
     manager.on(
       `${TransactionEvent.included}-${id}`,
       (e: TransactionIncludedEvent) => {
-        this.saveCompletedTransaction({ ...e, id });
+        this.saveCompletedTransaction({ ...e, id, chainId: manager.chain.id });
       }
     );
 
@@ -184,19 +182,17 @@ export class RequestMediator {
   private async saveCompletedTransaction(
     params: TransactionIncludedEvent & {
       id: UUID;
+      chainId: number;
     }
   ) {
     try {
       console.info(`transaction ${params.id} complete`);
-
-      const receipt = await this.client.getTransactionReceipt({
+      const client = this.getTransactionManager(params.chainId).client;
+      const receipt = await client.getTransactionReceipt({
         hash: params.hash,
       });
-      const status =
-        receipt.status === "success" ? Status.complete : Status.failed;
-
       await this.requestRepo.update(params.id, {
-        status,
+        status: receipt.status === "success" ? Status.complete : Status.failed,
       });
       console.info(`done saving`);
     } catch (e) {
