@@ -2,8 +2,8 @@ import {
   TransactionIncludedEvent,
   TransactionEvent,
   TransactionManager,
-  TransactionRetryEvent,
-  TransactionStartEvent,
+  TransactionRetriedEvent,
+  TransactionSubmittedEvent,
 } from "./TransactionManager";
 import { RequestRepository } from "./RequestRepository";
 import { UUID, randomUUID } from "crypto";
@@ -80,7 +80,7 @@ export class RequestMediator {
   ) {
     manager.once(
       `${TransactionEvent.submitted}-${id}`,
-      (e: TransactionStartEvent) => {
+      (e: TransactionSubmittedEvent) => {
         this.saveStartedTransaction({
           ...e,
           chainId: manager.chain.id,
@@ -95,7 +95,7 @@ export class RequestMediator {
 
     manager.on(
       `${TransactionEvent.retry}-${id}`,
-      (e: TransactionRetryEvent) => {
+      (e: TransactionRetriedEvent) => {
         this.saveRetriedTransaction({ ...e, id });
       }
     );
@@ -124,7 +124,7 @@ export class RequestMediator {
   }
 
   private async saveStartedTransaction(
-    params: TransactionStartEvent & {
+    params: TransactionSubmittedEvent & {
       id: UUID;
       chainId: number;
       from: Address;
@@ -157,7 +157,7 @@ export class RequestMediator {
   }
 
   private async saveRetriedTransaction(
-    params: TransactionRetryEvent & {
+    params: TransactionRetriedEvent & {
       id: UUID;
     }
   ) {

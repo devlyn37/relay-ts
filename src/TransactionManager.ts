@@ -21,15 +21,15 @@ export const TransactionEvent = {
 export type TransactionEvent = ObjectValues<typeof TransactionEvent>;
 export const TransactionEvents = objectValues(TransactionEvent);
 
-export type TransactionRetryEvent = {
+export type TransactionRetriedEvent = {
   hash: Hash;
   fees: GasFees;
 };
-export type TransactionStartEvent = TransactionRetryEvent & {
+export type TransactionSubmittedEvent = TransactionRetriedEvent & {
   nonce: number;
 };
-export type TransactionCancelEvent = TransactionRetryEvent;
-export type TransactionIncludedEvent = TransactionStartEvent;
+export type TransactionCancelledEvent = TransactionRetriedEvent;
+export type TransactionIncludedEvent = TransactionSubmittedEvent;
 
 // Custom Errors
 export class DuplicateIdError extends Error {
@@ -76,8 +76,8 @@ export class TransactionManager extends EventEmitter {
   public chain: Chain;
   public pending: Map<string, TransactionData> = new Map();
   public hashToUUID: Map<Hash, string> = new Map();
+  public client: PublicClient;
 
-  private client: PublicClient;
   private managedWallets: Map<Address, NonceManagedWallet>;
   private blockRetry: number;
   private blockCancel: number;
@@ -125,7 +125,7 @@ export class TransactionManager extends EventEmitter {
       hash,
     });
 
-    const e: TransactionStartEvent = { nonce, hash, fees };
+    const e: TransactionSubmittedEvent = { nonce, hash, fees };
     this.emit(`${TransactionEvent.submitted}-${id}`, e);
   }
 
@@ -225,7 +225,7 @@ export class TransactionManager extends EventEmitter {
       txn.blocksSpentWaiting = 0;
       txn.fees = retryFees;
 
-      const e: TransactionRetryEvent = { hash, fees: txn.fees };
+      const e: TransactionRetriedEvent = { hash, fees: txn.fees };
       return this.emit(`${TransactionEvent.retry}-${id}`, e);
     } catch (error) {
       return this.emit(`${TransactionEvent.failRetry}-${id}`, error);
@@ -268,7 +268,7 @@ export class TransactionManager extends EventEmitter {
       // cancellation failure event.
       await this.client.waitForTransactionReceipt({ hash });
 
-      const event: TransactionCancelEvent = { hash, fees: txn.fees };
+      const event: TransactionCancelledEvent = { hash, fees: txn.fees };
       return this.emit(`${TransactionEvent.cancel}-${id}`, event);
     } catch (error) {
       return this.emit(`${TransactionEvent.failCancel}-${id}`, error);
