@@ -162,9 +162,7 @@ export class TransactionManager extends EventEmitter {
       const id = this.hashToUUID.get(hash);
 
       if (id !== undefined) {
-        this.hashToUUID.delete(hash);
-        this.pending.delete(id);
-        this.emit(`${TransactionEvent.included}-${id}`);
+        this.processIncluded(id, hash);
       }
     }
 
@@ -209,9 +207,7 @@ export class TransactionManager extends EventEmitter {
         });
       } catch (e) {
         if (e instanceof NonceAlreadyIncludedError) {
-          this.hashToUUID.delete(txn.hash);
-          this.pending.delete(id);
-          return this.emit(`${TransactionEvent.included}-${id}`);
+          this.processIncluded(id, txn.hash);
         }
 
         throw e;
@@ -251,9 +247,7 @@ export class TransactionManager extends EventEmitter {
         });
       } catch (e) {
         if (e instanceof NonceAlreadyIncludedError) {
-          this.hashToUUID.delete(txn.hash);
-          this.pending.delete(id);
-          return this.emit(`${TransactionEvent.included}-${id}`);
+          this.processIncluded(id, txn.hash);
         }
 
         throw e;
@@ -273,6 +267,24 @@ export class TransactionManager extends EventEmitter {
     } catch (error) {
       return this.emit(`${TransactionEvent.failCancel}-${id}`, error);
     }
+  }
+
+  private processIncluded(id: string, hash: Hash) {
+    const current = this.pending.get(id);
+
+    if (current === undefined) {
+      throw new Error("ahh this shouldn't happen");
+    }
+
+    const event: TransactionIncludedEvent = {
+      hash: current.hash,
+      fees: current.fees,
+      nonce: current.nonce,
+    };
+
+    this.pending.delete(id);
+    this.hashToUUID.delete(hash);
+    this.emit(`${TransactionEvent.included}-${id}`, event);
   }
 
   private getWallet(address: Address) {

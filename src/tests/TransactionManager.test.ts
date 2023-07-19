@@ -8,8 +8,8 @@ import {
   testClient,
 } from "./utils.js";
 import { parseEther, parseGwei, webSocket } from "viem";
-import { test, describe, expect } from "vitest";
-import { TransactionManager } from "../TransactionManager.js";
+import { test, describe, expect, vi } from "vitest";
+import { TransactionEvent, TransactionManager } from "../TransactionManager.js";
 import { BaseGasOracle } from "../gasOracle.js";
 import { sleep } from "../utils.js";
 import { randomUUID } from "crypto";
@@ -31,6 +31,7 @@ describe("TransactionManager", () => {
         blockRetry: 5,
         blockCancel: 25,
       });
+      const emitSpy = vi.spyOn(transactionManager, "emit");
 
       await testClient.setBalance({
         address: managedWallet.address,
@@ -46,16 +47,33 @@ describe("TransactionManager", () => {
         parseEther("0.1")
       );
 
-      // drop the transaction from the mempool so it doesn't get mined
-      const hash = transactionManager.pending.get(transactionId)!.hash;
+      const initiallyTrackedRequest =
+        transactionManager.pending.get(transactionId);
+      if (initiallyTrackedRequest === undefined) {
+        throw new Error(
+          `Transaction manager should be keeping track of txn ${transactionId}`
+        );
+      }
+
       const pendingBeforeRetry = await getPendingTxnsForAddress(
         managedWallet.address
       );
-      expect(pendingBeforeRetry.length).to.eq(1);
-      const hashBeforeRetry = pendingBeforeRetry[0].hash;
+      expect(
+        pendingBeforeRetry.length,
+        "Only a single transaction should be in the mempool after sending"
+      ).to.eq(1);
+      const initiallySubmittedTxn = pendingBeforeRetry[0];
+      expect(emitSpy).toHaveBeenCalledWith(
+        `${TransactionEvent.submitted}-${transactionId}`,
+        {
+          nonce: 0,
+          hash: initiallySubmittedTxn.hash,
+          fees: initiallyTrackedRequest.fees,
+        }
+      );
 
       // Drop the transaction and mine enough blocks so that the next block that is mined will trigger a retry
-      await testClient.dropTransaction({ hash });
+      await testClient.dropTransaction({ hash: initiallyTrackedRequest.hash });
       await testClient.mine({ blocks: 4 });
       await sleep(1000);
 
@@ -67,8 +85,6 @@ describe("TransactionManager", () => {
 
       // Check that the transaction is still pending
       expect(transactionManager.pending.has(transactionId)).toBe(true);
-      console.log("Transactions before retry");
-      console.log(transactionManager.pending);
 
       // Mine another block, triggering a retry
       await testClient.mine({ blocks: 1 });
@@ -78,22 +94,43 @@ describe("TransactionManager", () => {
       const pendingAfterRetry = await getPendingTxnsForAddress(
         managedWallet.address
       );
-      expect(pendingAfterRetry.length).to.eq(1);
-      const hashAfterRetry = pendingAfterRetry[0].hash;
-
-      expect(hashAfterRetry).to.not.eq(hashBeforeRetry);
       expect(
-        transactionManager.pending.get(transactionId)?.blocksSpentWaiting
-      ).toBe(0);
+        pendingAfterRetry.length,
+        "Only a single transaction should be in the mempool after retry"
+      ).to.eq(1);
+      const submittedRetryTxn = pendingAfterRetry[0];
+      const trackedRequestPostRetry =
+        transactionManager.pending.get(transactionId);
+
+      expect(submittedRetryTxn.hash).to.not.eq(initiallySubmittedTxn.hash);
+      expect(trackedRequestPostRetry!.blocksSpentWaiting).toBe(0);
+
+      expect(emitSpy).toHaveBeenCalledWith(
+        `${TransactionEvent.retry}-${transactionId}`,
+        {
+          hash: submittedRetryTxn.hash,
+          fees: trackedRequestPostRetry!.fees,
+        }
+      );
 
       // Finally, the retried transaction should have been mined
       await testClient.mine({ blocks: 1 });
       await sleep(500);
       expect(transactionManager.pending.has(transactionId)).toBe(false);
+      expect(transactionManager.pending.size).to.eq(0);
       const pendingFinal = await getPendingTxnsForAddress(
         managedWallet.address
       );
       expect(pendingFinal.length).to.eq(0);
+
+      expect(emitSpy).toHaveBeenCalledWith(
+        `${TransactionEvent.included}-${transactionId}`,
+        {
+          hash: submittedRetryTxn.hash,
+          fees: trackedRequestPostRetry!.fees,
+          nonce: 0,
+        }
+      );
     },
     { timeout: 30000 }
   );
