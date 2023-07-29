@@ -7,8 +7,20 @@ import { GasOracle } from "./gasOracle";
 import EventEmitter from "events";
 import { GasFees, ObjectValues, objectValues } from "./TypesAndValidation";
 
-// Event Types
+// Block Events
+export const BlockEvent = {
+  proccessed: "blockProcessed",
+  processingFailed: "blockProcessingFailed",
+} as const;
 
+export type BlockEvent = ObjectValues<typeof BlockEvent>;
+export const BlockEvents = objectValues(BlockEvent);
+
+export type BlockEventParams = {
+  blockNumber: bigint;
+};
+
+// Transaction Events
 export const TransactionEvent = {
   submitted: "transactionSubmitted",
   retry: "transactionRetried",
@@ -16,7 +28,6 @@ export const TransactionEvent = {
   included: "transactionIncluded",
   cancel: "transactionCancelled",
   failCancel: "transactionCancelFailed",
-  processingBlockFailed: "processingBlockFailed",
 } as const;
 export type TransactionEvent = ObjectValues<typeof TransactionEvent>;
 export const TransactionEvents = objectValues(TransactionEvent);
@@ -71,7 +82,6 @@ type TransactionManagerConfig = {
   blockRetry: number;
   blockCancel: number;
 };
-
 export class TransactionManager extends EventEmitter {
   public chain: Chain;
   public pending: Map<string, TransactionData> = new Map();
@@ -147,10 +157,11 @@ export class TransactionManager extends EventEmitter {
           console.info(
             `Block fully processed, completed transactions marked, retries sent: ${new Date()}`
           );
+          this.emit(`${BlockEvent.proccessed}`, { blockNumber: n });
         } catch (e) {
           // This means there's been an unexpected error, which will require intervention
           // an event subscriber should decide how to handler this.
-          this.emit(TransactionEvent.processingBlockFailed);
+          this.emit(`${BlockEvent.processingFailed}`, { blockNumber: n });
         }
       },
     });
@@ -166,7 +177,7 @@ export class TransactionManager extends EventEmitter {
       }
     }
 
-    const retries = [];
+    const retriesAndCancels = [];
     let oracleEstimate: GasFees | undefined = undefined;
 
     for (const [id, txn] of this.pending.entries()) {
@@ -179,14 +190,14 @@ export class TransactionManager extends EventEmitter {
 
       if (shouldCancel) {
         oracleEstimate = oracleEstimate ?? (await this.gasOracle.getCurrent()); // Let's only fetch this once
-        retries.push(this.cancelTransaction(id, txn, oracleEstimate));
+        retriesAndCancels.push(this.cancelTransaction(id, txn, oracleEstimate));
       } else if (shouldRetry) {
         oracleEstimate = oracleEstimate ?? (await this.gasOracle.getCurrent());
-        retries.push(this.retryTransaction(id, txn, oracleEstimate));
+        retriesAndCancels.push(this.retryTransaction(id, txn, oracleEstimate));
       }
     }
 
-    return Promise.all(retries);
+    return Promise.all(retriesAndCancels);
   }
 
   private async retryTransaction(
@@ -208,6 +219,7 @@ export class TransactionManager extends EventEmitter {
       } catch (e) {
         if (e instanceof NonceAlreadyIncludedError) {
           this.processIncluded(id, txn.hash);
+          return;
         }
 
         throw e;
@@ -248,6 +260,7 @@ export class TransactionManager extends EventEmitter {
       } catch (e) {
         if (e instanceof NonceAlreadyIncludedError) {
           this.processIncluded(id, txn.hash);
+          return;
         }
 
         throw e;
@@ -260,10 +273,19 @@ export class TransactionManager extends EventEmitter {
       // If the cancellation transaction fails or times out, intervention will be needed.
       // That's beyond the scope of this class and can be handled by subscribers to the
       // cancellation failure event.
-      await this.client.waitForTransactionReceipt({ hash });
+      const waitForCancel = async () => {
+        // TODO clean this up
+        try {
+          await this.client.waitForTransactionReceipt({ hash });
+          const event: TransactionCancelledEvent = { hash, fees: txn.fees };
+          this.emit(`${TransactionEvent.cancel}-${id}`, event);
+        } catch (error) {
+          this.emit(`${TransactionEvent.failCancel}-${id}`, error);
+        }
+      };
 
-      const event: TransactionCancelledEvent = { hash, fees: txn.fees };
-      return this.emit(`${TransactionEvent.cancel}-${id}`, event);
+      // run async so we don't block the `processBlock` promise from resolving
+      waitForCancel();
     } catch (error) {
       return this.emit(`${TransactionEvent.failCancel}-${id}`, error);
     }
@@ -281,6 +303,8 @@ export class TransactionManager extends EventEmitter {
       fees: current.fees,
       nonce: current.nonce,
     };
+
+    console.log(`completed tx ${id}`);
 
     this.pending.delete(id);
     this.hashToUUID.delete(hash);
