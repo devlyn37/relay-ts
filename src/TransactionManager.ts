@@ -35,6 +35,7 @@ export const TransactionEvents = objectValues(TransactionEvent);
 export type TransactionRetriedEvent = {
   hash: Hash;
   fees: GasFees;
+  from: Address;
 };
 export type TransactionSubmittedEvent = TransactionRetriedEvent & {
   nonce: number;
@@ -135,7 +136,7 @@ export class TransactionManager extends EventEmitter {
       hash,
     });
 
-    const e: TransactionSubmittedEvent = { nonce, hash, fees };
+    const e: TransactionSubmittedEvent = { nonce, hash, fees, from };
     this.emit(`${TransactionEvent.submitted}-${id}`, e);
   }
 
@@ -173,7 +174,14 @@ export class TransactionManager extends EventEmitter {
       const id = this.hashToUUID.get(hash);
 
       if (id !== undefined) {
-        this.processIncluded(id, hash);
+        const tracked = this.pending.get(id);
+        if (tracked === undefined) {
+          throw new Error(
+            "Transactions map is out of sync with hash to id map, This should never happen!"
+          );
+        }
+
+        this.processIncluded(id, hash, tracked.from);
       }
     }
 
@@ -218,7 +226,7 @@ export class TransactionManager extends EventEmitter {
         });
       } catch (e) {
         if (e instanceof NonceAlreadyIncludedError) {
-          this.processIncluded(id, txn.hash);
+          this.processIncluded(id, txn.hash, txn.from);
           return;
         }
 
@@ -233,7 +241,11 @@ export class TransactionManager extends EventEmitter {
       txn.blocksSpentWaiting = 0;
       txn.fees = retryFees;
 
-      const e: TransactionRetriedEvent = { hash, fees: txn.fees };
+      const e: TransactionRetriedEvent = {
+        hash,
+        fees: txn.fees,
+        from: txn.from,
+      };
       return this.emit(`${TransactionEvent.retry}-${id}`, e);
     } catch (error) {
       return this.emit(`${TransactionEvent.failRetry}-${id}`, error);
@@ -259,7 +271,7 @@ export class TransactionManager extends EventEmitter {
         });
       } catch (e) {
         if (e instanceof NonceAlreadyIncludedError) {
-          this.processIncluded(id, txn.hash);
+          this.processIncluded(id, txn.hash, txn.from);
           return;
         }
 
@@ -277,7 +289,11 @@ export class TransactionManager extends EventEmitter {
         // TODO clean this up
         try {
           await this.client.waitForTransactionReceipt({ hash });
-          const event: TransactionCancelledEvent = { hash, fees: txn.fees };
+          const event: TransactionCancelledEvent = {
+            hash,
+            fees: txn.fees,
+            from: txn.from,
+          };
           this.emit(`${TransactionEvent.cancel}-${id}`, event);
         } catch (error) {
           this.emit(`${TransactionEvent.failCancel}-${id}`, error);
@@ -291,7 +307,7 @@ export class TransactionManager extends EventEmitter {
     }
   }
 
-  private processIncluded(id: string, hash: Hash) {
+  private processIncluded(id: string, hash: Hash, from: Address) {
     const current = this.pending.get(id);
 
     if (current === undefined) {
@@ -302,6 +318,7 @@ export class TransactionManager extends EventEmitter {
       hash: current.hash,
       fees: current.fees,
       nonce: current.nonce,
+      from,
     };
 
     console.log(`completed tx ${id}`);
