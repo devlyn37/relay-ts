@@ -14,36 +14,51 @@ import { BaseGasOracle } from "../gasOracle.js";
 import { sleep } from "../utils.js";
 import { randomUUID } from "crypto";
 
+async function generateFundedAccounts(n: number) {
+  const accounts = [];
+
+  for (let i = 0; i < n; i++) {
+    accounts.push(
+      new NonceManagedWallet(
+        privateKeyToAccount(generatePrivateKey()),
+        webSocket(),
+        testChain
+      )
+    );
+  }
+
+  const fundPromises = accounts.map((account) =>
+    testClient.setBalance({
+      address: account.address,
+      value: parseEther("1"),
+    })
+  );
+  await Promise.all(fundPromises);
+
+  return accounts;
+}
+
 describe("TransactionManager", () => {
   test(
     "Retries a transaction after blockRetry blocks have been mined",
     async () => {
-      const managedWallet = new NonceManagedWallet(
-        privateKeyToAccount(generatePrivateKey()),
-        webSocket(),
-        testChain
-      );
+      const accounts = await generateFundedAccounts(1);
       const transactionManager = new TransactionManager({
         chain: testChain,
         client: publicClient,
-        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        managedWallets: new Map([[accounts[0].address, accounts[0]]]),
         gasOracle: new BaseGasOracle(publicClient),
         blockRetry: 5,
         blockCancel: 25,
       });
       const emitSpy = vi.spyOn(transactionManager, "emit");
 
-      await testClient.setBalance({
-        address: managedWallet.address,
-        value: parseEther("1"),
-      });
-
       // send a transaction to monitor
       const transactionId = randomUUID();
       await transactionManager.send(
         transactionId,
         ALICE,
-        managedWallet.address,
+        accounts[0].address,
         parseEther("0.1")
       );
 
@@ -56,7 +71,7 @@ describe("TransactionManager", () => {
       }
 
       const pendingBeforeRetry = await getPendingTxnsForAddress(
-        managedWallet.address
+        accounts[0].address
       );
       expect(
         pendingBeforeRetry.length,
@@ -79,7 +94,7 @@ describe("TransactionManager", () => {
 
       // Check that despite being dropped from the mempool, the transaction manager is keeping track of the transaction we sent
       const pendingAfterDropping = await getPendingTxnsForAddress(
-        managedWallet.address
+        accounts[0].address
       );
       expect(pendingAfterDropping.length).to.eq(0);
 
@@ -92,7 +107,7 @@ describe("TransactionManager", () => {
 
       // Check that a new transaction has replaced the former, with a different hash
       const pendingAfterRetry = await getPendingTxnsForAddress(
-        managedWallet.address
+        accounts[0].address
       );
       expect(
         pendingAfterRetry.length,
@@ -118,9 +133,7 @@ describe("TransactionManager", () => {
       await sleep(500);
       expect(transactionManager.pending.has(transactionId)).toBe(false);
       expect(transactionManager.pending.size).to.eq(0);
-      const pendingFinal = await getPendingTxnsForAddress(
-        managedWallet.address
-      );
+      const pendingFinal = await getPendingTxnsForAddress(accounts[0].address);
       expect(pendingFinal.length).to.eq(0);
 
       expect(emitSpy).toHaveBeenCalledWith(
@@ -138,22 +151,19 @@ describe("TransactionManager", () => {
   test(
     "Does not retry a transaction if it is mined within blockRetry blocks",
     async () => {
-      const managedWallet = new NonceManagedWallet(
-        privateKeyToAccount(generatePrivateKey()),
-        webSocket(),
-        testChain
-      );
+      const accounts = await generateFundedAccounts(1);
+
       const transactionManager = new TransactionManager({
         chain: testChain,
         client: publicClient,
-        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        managedWallets: new Map([[accounts[0].address, accounts[0]]]),
         gasOracle: new BaseGasOracle(publicClient),
         blockRetry: 5,
         blockCancel: 25,
       });
 
       await testClient.setBalance({
-        address: managedWallet.address,
+        address: accounts[0].address,
         value: parseEther("1"),
       });
 
@@ -162,7 +172,7 @@ describe("TransactionManager", () => {
       await transactionManager.send(
         transactionId,
         ALICE,
-        managedWallet.address,
+        accounts[0].address,
         parseEther("0.1")
       );
 
@@ -182,22 +192,18 @@ describe("TransactionManager", () => {
   test(
     "Will handle large spikes in gas",
     async () => {
-      const managedWallet = new NonceManagedWallet(
-        privateKeyToAccount(generatePrivateKey()),
-        webSocket(),
-        testChain
-      );
+      const accounts = await generateFundedAccounts(1);
       const transactionManager = new TransactionManager({
         chain: testChain,
         client: publicClient,
-        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        managedWallets: new Map([[accounts[0].address, accounts[0]]]),
         gasOracle: new BaseGasOracle(publicClient),
         blockRetry: 1,
         blockCancel: 25,
       });
 
       await testClient.setBalance({
-        address: managedWallet.address,
+        address: accounts[0].address,
         value: parseEther("1"),
       });
 
@@ -206,7 +212,7 @@ describe("TransactionManager", () => {
       await transactionManager.send(
         transactionId,
         ALICE,
-        managedWallet.address,
+        accounts[0].address,
         parseEther("0.1")
       );
       const initialHash = transactionManager.pending.get(transactionId)!.hash;
@@ -221,7 +227,7 @@ describe("TransactionManager", () => {
       await sleep(500);
 
       const pendingAfterRetry = await getPendingTxnsForAddress(
-        managedWallet.address
+        accounts[0].address
       );
       expect(pendingAfterRetry.length).to.eq(1);
       expect(pendingAfterRetry[0].hash).to.not.eq(initialHash);
@@ -238,9 +244,7 @@ describe("TransactionManager", () => {
       await sleep(500);
 
       expect(transactionManager.pending.has(transactionId)).toBe(false);
-      const pendingFinal = await getPendingTxnsForAddress(
-        managedWallet.address
-      );
+      const pendingFinal = await getPendingTxnsForAddress(accounts[0].address);
       expect(pendingFinal.length).to.eq(0);
     },
     { timeout: 30000 }
@@ -249,24 +253,15 @@ describe("TransactionManager", () => {
   test(
     "Will retry multiple times",
     async () => {
-      const managedWallet = new NonceManagedWallet(
-        privateKeyToAccount(generatePrivateKey()),
-        webSocket(),
-        testChain
-      );
+      const accounts = await generateFundedAccounts(1);
 
       const transactionManager = new TransactionManager({
         chain: testChain,
         client: publicClient,
-        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        managedWallets: new Map([[accounts[0].address, accounts[0]]]),
         gasOracle: new BaseGasOracle(publicClient),
         blockRetry: 3,
         blockCancel: 25,
-      });
-
-      await testClient.setBalance({
-        address: managedWallet.address,
-        value: parseEther("1"),
       });
 
       // send transaction to monitor
@@ -274,7 +269,7 @@ describe("TransactionManager", () => {
       await transactionManager.send(
         transactionId,
         ALICE,
-        managedWallet.address,
+        accounts[0].address,
         parseEther("0.1")
       );
 
@@ -291,7 +286,7 @@ describe("TransactionManager", () => {
 
         // Check blockchain state
         const pendingAfterRetry = await getPendingTxnsForAddress(
-          managedWallet.address
+          accounts[0].address
         );
         expect(pendingAfterRetry.length).to.eq(1);
         const hashAfterRetry = pendingAfterRetry[0].hash;
@@ -307,9 +302,7 @@ describe("TransactionManager", () => {
       await testClient.mine({ blocks: 1 });
       await sleep(500);
       expect(transactionManager.pending.has(transactionId)).toBe(false);
-      const pendingFinal = await getPendingTxnsForAddress(
-        managedWallet.address
-      );
+      const pendingFinal = await getPendingTxnsForAddress(accounts[0].address);
       expect(pendingFinal.length).to.eq(0);
     },
     { timeout: 30000 }
@@ -318,25 +311,15 @@ describe("TransactionManager", () => {
   test(
     "Will cancel a transaction after enough time",
     async () => {
-      const managedWallet = new NonceManagedWallet(
-        privateKeyToAccount(generatePrivateKey()),
-        webSocket(),
-        testChain
-      );
-
+      const accounts = await generateFundedAccounts(1);
       // Also testing here that cancellation will take precedence over retrying
       const transactionManager = new TransactionManager({
         chain: testChain,
         client: publicClient,
-        managedWallets: new Map([[managedWallet.address, managedWallet]]),
+        managedWallets: new Map([[accounts[0].address, accounts[0]]]),
         gasOracle: new BaseGasOracle(publicClient),
         blockRetry: 5,
         blockCancel: 5,
-      });
-
-      await testClient.setBalance({
-        address: managedWallet.address,
-        value: parseEther("1"),
       });
 
       // send a transaction to monitor
@@ -344,14 +327,14 @@ describe("TransactionManager", () => {
       await transactionManager.send(
         transactionId,
         ALICE,
-        managedWallet.address,
+        accounts[0].address,
         parseEther("0.1")
       );
 
       // drop the transaction from the mempool so it doesn't get mined
       const hash = transactionManager.pending.get(transactionId)!.hash;
       const pendingBeforeRetry = await getPendingTxnsForAddress(
-        managedWallet.address
+        accounts[0].address
       );
       expect(pendingBeforeRetry.length).to.eq(1);
       const hashBeforeRetry = pendingBeforeRetry[0].hash;
@@ -363,7 +346,7 @@ describe("TransactionManager", () => {
 
       // Check that despite being dropped from the mempool, the transaction manager is keeping track of the transaction we sent
       const pendingAfterDropping = await getPendingTxnsForAddress(
-        managedWallet.address
+        accounts[0].address
       );
       expect(pendingAfterDropping.length).to.eq(0);
 
@@ -378,7 +361,7 @@ describe("TransactionManager", () => {
 
       // Check that a new transaction has replaced the former, with a different hash
       const pendingAfterCancellation = await getPendingTxnsForAddress(
-        managedWallet.address
+        accounts[0].address
       );
       expect(pendingAfterCancellation.length).to.eq(1);
       const hashAfterRetry = pendingAfterCancellation[0].hash;
@@ -397,9 +380,7 @@ describe("TransactionManager", () => {
       // Finally, the cancellation transaction should have been mined
       await testClient.mine({ blocks: 1 });
       await sleep(500);
-      const pendingFinal = await getPendingTxnsForAddress(
-        managedWallet.address
-      );
+      const pendingFinal = await getPendingTxnsForAddress(accounts[0].address);
       expect(pendingFinal.length).to.eq(0);
     },
     { timeout: 30000 }
@@ -408,35 +389,17 @@ describe("TransactionManager", () => {
   test(
     "Can manage more than a single wallet",
     async () => {
-      const managedWallet1 = new NonceManagedWallet(
-        privateKeyToAccount(generatePrivateKey()),
-        webSocket(),
-        testChain
-      );
-      const managedWallet2 = new NonceManagedWallet(
-        privateKeyToAccount(generatePrivateKey()),
-        webSocket(),
-        testChain
-      );
+      const accounts = await generateFundedAccounts(2);
       const transactionManager = new TransactionManager({
         chain: testChain,
         client: publicClient,
         managedWallets: new Map([
-          [managedWallet1.address, managedWallet1],
-          [managedWallet2.address, managedWallet2],
+          [accounts[0].address, accounts[0]],
+          [accounts[1].address, accounts[1]],
         ]),
         gasOracle: new BaseGasOracle(publicClient),
         blockRetry: 5,
         blockCancel: 25,
-      });
-
-      await testClient.setBalance({
-        address: managedWallet1.address,
-        value: parseEther("1"),
-      });
-      await testClient.setBalance({
-        address: managedWallet2.address,
-        value: parseEther("1"),
       });
 
       // send a transaction to monitor
@@ -444,25 +407,21 @@ describe("TransactionManager", () => {
       await transactionManager.send(
         transactionId1,
         ALICE,
-        managedWallet1.address,
+        accounts[0].address,
         parseEther("0.1")
       );
       const transactionId2 = randomUUID();
       await transactionManager.send(
         transactionId2,
         ALICE,
-        managedWallet2.address,
+        accounts[1].address,
         parseEther("0.1")
       );
 
       // Check that both wallets have a single transaction in the mempool
-      let pendingAddress1 = await getPendingTxnsForAddress(
-        managedWallet1.address
-      );
+      let pendingAddress1 = await getPendingTxnsForAddress(accounts[0].address);
       expect(pendingAddress1.length).to.eq(1);
-      let pendingAddress2 = await getPendingTxnsForAddress(
-        managedWallet2.address
-      );
+      let pendingAddress2 = await getPendingTxnsForAddress(accounts[1].address);
       expect(pendingAddress2.length).to.eq(1);
 
       await testClient.mine({ blocks: 1 });
@@ -471,9 +430,9 @@ describe("TransactionManager", () => {
       // Check that both wallet had their transactions mined
       expect(transactionManager.pending.has(transactionId1)).toBe(false);
       expect(transactionManager.pending.has(transactionId2)).toBe(false);
-      pendingAddress1 = await getPendingTxnsForAddress(managedWallet1.address);
+      pendingAddress1 = await getPendingTxnsForAddress(accounts[0].address);
       expect(pendingAddress1.length).to.eq(0);
-      pendingAddress2 = await getPendingTxnsForAddress(managedWallet2.address);
+      pendingAddress2 = await getPendingTxnsForAddress(accounts[1].address);
       expect(pendingAddress2.length).to.eq(0);
     },
     { timeout: 30000 }
