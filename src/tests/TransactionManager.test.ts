@@ -1,42 +1,17 @@
-import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
-import { NonceManagedWallet } from "../NonceManagedWallet.js";
 import { ALICE } from "./constants.js";
 import {
+  generateFundedAccounts,
   getPendingTxnsForAddress,
   mineAndProcessBlocks,
   publicClient,
   testChain,
   testClient,
 } from "./utils.js";
-import { parseEther, parseGwei, webSocket } from "viem";
+import { parseEther, parseGwei } from "viem";
 import { test, describe, expect, vi } from "vitest";
 import { TransactionEvent, TransactionManager } from "../TransactionManager.js";
 import { BaseGasOracle } from "../gasOracle.js";
 import { randomUUID } from "crypto";
-
-async function generateFundedAccounts(n: number) {
-  const accounts = [];
-
-  for (let i = 0; i < n; i++) {
-    accounts.push(
-      new NonceManagedWallet(
-        privateKeyToAccount(generatePrivateKey()),
-        webSocket(),
-        testChain
-      )
-    );
-  }
-
-  const fundPromises = accounts.map((account) =>
-    testClient.setBalance({
-      address: account.address,
-      value: parseEther("1"),
-    })
-  );
-  await Promise.all(fundPromises);
-
-  return accounts;
-}
 
 describe("TransactionManager", () => {
   test("Retries a transaction after blockRetry blocks have been mined", async () => {
@@ -82,6 +57,7 @@ describe("TransactionManager", () => {
         nonce: 0,
         hash: initiallySubmittedTxn.hash,
         fees: initiallyTrackedRequest.fees,
+        from: accounts[0].address,
       }
     );
 
@@ -120,6 +96,7 @@ describe("TransactionManager", () => {
       {
         hash: submittedRetryTxn.hash,
         fees: trackedRequestPostRetry!.fees,
+        from: accounts[0].address,
       }
     );
 
@@ -137,6 +114,7 @@ describe("TransactionManager", () => {
         hash: submittedRetryTxn.hash,
         fees: trackedRequestPostRetry!.fees,
         nonce: 0,
+        from: accounts[0].address,
       }
     );
   });
@@ -354,6 +332,7 @@ describe("TransactionManager", () => {
       blockRetry: 5,
       blockCancel: 25,
     });
+    const emitSpy = vi.spyOn(transactionManager, "emit");
 
     // send a transaction to monitor
     const transactionId1 = randomUUID();
@@ -372,24 +351,73 @@ describe("TransactionManager", () => {
     );
 
     // Check that both wallets have a single transaction in the mempool
-    let pendingAddress1 = await getPendingTxnsForAddress(accounts[0].address);
-    let pendingAddress2 = await getPendingTxnsForAddress(accounts[1].address);
+    const pendingAddress1 = await getPendingTxnsForAddress(accounts[0].address);
+    const trackedAddress1 = transactionManager.pending.get(transactionId1)!;
+
+    const pendingAddress2 = await getPendingTxnsForAddress(accounts[1].address);
+    const trackedAddress2 = transactionManager.pending.get(transactionId2)!;
+
     expect(pendingAddress1.length).to.eq(1);
     expect(pendingAddress2.length).to.eq(1);
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      `${TransactionEvent.submitted}-${transactionId1}`,
+      {
+        nonce: 0,
+        hash: pendingAddress1[0].hash,
+        fees: trackedAddress1.fees,
+        from: accounts[0].address,
+      }
+    );
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      `${TransactionEvent.submitted}-${transactionId2}`,
+      {
+        nonce: 0,
+        hash: pendingAddress2[0].hash,
+        fees: trackedAddress2.fees,
+        from: accounts[1].address,
+      }
+    );
 
     await mineAndProcessBlocks(transactionManager, 1, 1000);
 
     // Check that both wallet had their transactions mined
     expect(transactionManager.pending.has(transactionId1)).toBe(false);
     expect(transactionManager.pending.has(transactionId2)).toBe(false);
-    pendingAddress1 = await getPendingTxnsForAddress(accounts[0].address);
-    expect(pendingAddress1.length).to.eq(0);
-    pendingAddress2 = await getPendingTxnsForAddress(accounts[1].address);
-    expect(pendingAddress2.length).to.eq(0);
+    const pendingAddressAfter1 = await getPendingTxnsForAddress(
+      accounts[0].address
+    );
+    expect(pendingAddressAfter1.length).to.eq(0);
+    const pendingAddressAfter2 = await getPendingTxnsForAddress(
+      accounts[1].address
+    );
+    expect(pendingAddressAfter2.length).to.eq(0);
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      `${TransactionEvent.included}-${transactionId1}`,
+      {
+        nonce: 0,
+        hash: pendingAddress1[0].hash,
+        fees: trackedAddress1.fees,
+        from: accounts[0].address,
+      }
+    );
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      `${TransactionEvent.included}-${transactionId2}`,
+      {
+        nonce: 0,
+        hash: pendingAddress2[0].hash,
+        fees: trackedAddress2.fees,
+        from: accounts[1].address,
+      }
+    );
   });
 
   // TODO
   // Retry when the transaction has already been mined
   // Cancel when the transaction has already been mined
   // Start testing events emitted
+  // Tidy up in general v/ messy right now
 });

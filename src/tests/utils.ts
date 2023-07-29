@@ -1,11 +1,19 @@
 import { createAnvil } from "@viem/anvil";
-import { Address, createPublicClient, createTestClient, webSocket } from "viem";
+import {
+  Address,
+  createPublicClient,
+  createTestClient,
+  parseEther,
+  webSocket,
+} from "viem";
 import { Chain, foundry } from "viem/chains";
 import {
   BlockEvent,
   BlockEventParams,
   TransactionManager,
 } from "../TransactionManager";
+import { NonceManagedWallet } from "../NonceManagedWallet";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 /**
  * The id of the current test worker.
@@ -90,4 +98,28 @@ export async function mineAndProcessBlocks(
   });
 
   return Promise.race([eventHook, timeout]);
+}
+
+export async function generateFundedAccounts(n: number) {
+  const accounts = [];
+
+  for (let i = 0; i < n; i++) {
+    accounts.push(
+      new NonceManagedWallet(
+        privateKeyToAccount(generatePrivateKey()),
+        webSocket(),
+        testChain
+      )
+    );
+  }
+
+  const fundPromises = accounts.map((account) =>
+    testClient.setBalance({
+      address: account.address,
+      value: parseEther("1"),
+    })
+  );
+  await Promise.all(fundPromises);
+
+  return accounts;
 }
